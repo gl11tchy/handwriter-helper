@@ -49,6 +49,161 @@ interface UploadRequest {
   meta: ReportMeta;
 }
 
+interface OcrRequest {
+  imageB64: string; // Base64-encoded image data (without data URL prefix)
+}
+
+interface GoogleVisionResponse {
+  responses: Array<{
+    fullTextAnnotation?: {
+      text: string;
+      pages: Array<{
+        blocks: Array<{
+          paragraphs: Array<{
+            words: Array<{
+              symbols: Array<{
+                text: string;
+                confidence: number;
+                boundingBox?: {
+                  vertices: Array<{ x: number; y: number }>;
+                };
+              }>;
+              confidence: number;
+              boundingBox?: {
+                vertices: Array<{ x: number; y: number }>;
+              };
+            }>;
+            confidence: number;
+            boundingBox?: {
+              vertices: Array<{ x: number; y: number }>;
+            };
+          }>;
+        }>;
+      }>;
+    };
+    textAnnotations?: Array<{
+      description: string;
+      boundingPoly?: {
+        vertices: Array<{ x: number; y: number }>;
+      };
+    }>;
+    error?: {
+      code: number;
+      message: string;
+    };
+  }>;
+}
+
+interface OcrResult {
+  text: string;
+  confidence: number;
+  words: Array<{
+    text: string;
+    confidence: number;
+    bbox: { x: number; y: number; w: number; h: number };
+    symbols: Array<{
+      text: string;
+      confidence: number;
+      bbox: { x: number; y: number; w: number; h: number };
+    }>;
+  }>;
+}
+
+function verticesToBbox(vertices: Array<{ x: number; y: number }> | undefined): { x: number; y: number; w: number; h: number } {
+  if (!vertices || vertices.length < 4) {
+    return { x: 0, y: 0, w: 0, h: 0 };
+  }
+  const xs = vertices.map(v => v.x || 0);
+  const ys = vertices.map(v => v.y || 0);
+  const minX = Math.min(...xs);
+  const minY = Math.min(...ys);
+  const maxX = Math.max(...xs);
+  const maxY = Math.max(...ys);
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+async function callGoogleVisionOCR(imageB64: string, apiKey: string): Promise<OcrResult> {
+  const requestBody = {
+    requests: [
+      {
+        image: { content: imageB64 },
+        features: [
+          { type: "DOCUMENT_TEXT_DETECTION", maxResults: 1 }
+        ],
+        imageContext: {
+          languageHints: ["en"]
+        }
+      }
+    ]
+  };
+
+  const response = await fetch(
+    `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Google Vision API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json() as GoogleVisionResponse;
+
+  if (data.responses[0]?.error) {
+    throw new Error(`Google Vision API error: ${data.responses[0].error.message}`);
+  }
+
+  const fullText = data.responses[0]?.fullTextAnnotation;
+
+  if (!fullText) {
+    return { text: "", confidence: 0, words: [] };
+  }
+
+  // Extract words with symbols and bounding boxes
+  const words: OcrResult["words"] = [];
+  let totalConfidence = 0;
+  let confidenceCount = 0;
+
+  for (const page of fullText.pages || []) {
+    for (const block of page.blocks || []) {
+      for (const paragraph of block.paragraphs || []) {
+        for (const word of paragraph.words || []) {
+          const symbols = (word.symbols || []).map(symbol => ({
+            text: symbol.text,
+            confidence: symbol.confidence || 0,
+            bbox: verticesToBbox(symbol.boundingBox?.vertices),
+          }));
+
+          const wordText = symbols.map(s => s.text).join("");
+          const wordConfidence = word.confidence || 0;
+
+          words.push({
+            text: wordText,
+            confidence: wordConfidence,
+            bbox: verticesToBbox(word.boundingBox?.vertices),
+            symbols,
+          });
+
+          totalConfidence += wordConfidence;
+          confidenceCount++;
+        }
+      }
+    }
+  }
+
+  const avgConfidence = confidenceCount > 0 ? totalConfidence / confidenceCount : 0;
+
+  return {
+    text: fullText.text || "",
+    confidence: avgConfidence,
+    words,
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -84,6 +239,45 @@ export default {
           { status: "ok", timestamp: new Date().toISOString() },
           { headers: corsHeaders }
         );
+      }
+
+      // OCR endpoint - uses Google Cloud Vision
+      if (url.pathname === "/api/ocr" && request.method === "POST") {
+        // Check content length (images can be large)
+        const contentLength = parseInt(request.headers.get("Content-Length") || "0");
+        if (contentLength > MAX_PAYLOAD_SIZE) {
+          return Response.json(
+            { error: `Payload too large. Maximum size is ${MAX_PAYLOAD_SIZE / (1024 * 1024)}MB.` },
+            { status: 413, headers: corsHeaders }
+          );
+        }
+
+        if (!env.GOOGLE_CLOUD_API_KEY) {
+          return Response.json(
+            { error: "OCR service not configured" },
+            { status: 503, headers: corsHeaders }
+          );
+        }
+
+        const body = await request.json() as OcrRequest;
+
+        if (!body.imageB64) {
+          return Response.json(
+            { error: "Missing imageB64 in request body" },
+            { status: 400, headers: corsHeaders }
+          );
+        }
+
+        try {
+          const result = await callGoogleVisionOCR(body.imageB64, env.GOOGLE_CLOUD_API_KEY);
+          return Response.json(result, { headers: corsHeaders });
+        } catch (error) {
+          console.error("OCR error:", error);
+          return Response.json(
+            { error: error instanceof Error ? error.message : "OCR processing failed" },
+            { status: 500, headers: corsHeaders }
+          );
+        }
       }
 
       // Upload encrypted report

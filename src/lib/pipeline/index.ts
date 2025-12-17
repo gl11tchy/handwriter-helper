@@ -1,7 +1,8 @@
 // Processing Pipeline for Handwriting Assessment
 // This is a client-side pipeline that processes uploaded images and PDFs
+// Uses Google Cloud Vision API for production-grade handwriting recognition
 
-import { createWorker, Worker } from "tesseract.js";
+import { api } from "@/lib/api";
 import type {
   AssignmentPayload,
   PipelineProgress,
@@ -51,9 +52,6 @@ type PageCanvas = {
   pageIndex: number;
 };
 
-// Cached Tesseract worker
-let cachedWorker: Worker | null = null;
-
 export type PipelineResult = {
   pages: PageData[];
   extractedTextPerLine: ExtractedLine[];
@@ -91,43 +89,6 @@ const MIN_CONTRAST_THRESHOLD = 0.3; // Below this, auto-enhance
 const MAX_BLUR_THRESHOLD = 0.15; // Below this blur score, image is too blurry
 const MAX_GLARE_THRESHOLD = 0.25; // Above this, too much glare
 const PDF_RENDER_SCALE = 2; // Render PDFs at 2x for ~200 DPI
-
-// Initialize or get cached Tesseract worker
-async function getWorker(): Promise<Worker> {
-  if (cachedWorker) {
-    return cachedWorker;
-  }
-
-  const worker = await createWorker("eng", 1, {
-    // Use CDN for worker and core files
-    workerPath: "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js",
-    corePath: "https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js",
-  });
-
-  cachedWorker = worker;
-  return worker;
-}
-
-// Terminate worker (call when done with pipeline)
-export async function terminateWorker(): Promise<void> {
-  if (cachedWorker) {
-    await cachedWorker.terminate();
-    cachedWorker = null;
-  }
-}
-
-// Crop a region from canvas
-function cropCanvas(
-  canvas: HTMLCanvasElement,
-  bbox: { x: number; y: number; w: number; h: number }
-): HTMLCanvasElement {
-  const cropped = document.createElement("canvas");
-  cropped.width = bbox.w;
-  cropped.height = bbox.h;
-  const ctx = cropped.getContext("2d")!;
-  ctx.drawImage(canvas, bbox.x, bbox.y, bbox.w, bbox.h, 0, 0, bbox.w, bbox.h);
-  return cropped;
-}
 
 // Calculate Levenshtein distance for fuzzy matching
 function levenshteinDistance(a: string, b: string): number {
@@ -495,102 +456,150 @@ function detectLines(
   return lines;
 }
 
-// Real OCR using Tesseract.js
+// Convert canvas to base64 (without data URL prefix)
+function canvasToBase64(canvas: HTMLCanvasElement): string {
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.9);
+  // Remove "data:image/jpeg;base64," prefix
+  return dataUrl.split(",")[1];
+}
+
+// Assign words to detected line regions based on vertical overlap
+function assignWordsToLines(
+  words: Array<{
+    text: string;
+    confidence: number;
+    bbox: { x: number; y: number; w: number; h: number };
+    symbols: Array<{
+      text: string;
+      confidence: number;
+      bbox: { x: number; y: number; w: number; h: number };
+    }>;
+  }>,
+  lines: DetectedLine[],
+  pageIndex: number
+): ExtractedLineWithChars[] {
+  // Initialize results for each line
+  const results: ExtractedLineWithChars[] = lines.map((line, i) => ({
+    lineIndex: i,
+    text: "",
+    confidence: 0,
+    bbox: line.bbox,
+    characters: [],
+    pageIndex,
+  }));
+
+  // Assign each word to the line it overlaps most with
+  for (const word of words) {
+    const wordCenterY = word.bbox.y + word.bbox.h / 2;
+
+    // Find the line this word belongs to
+    let bestLineIdx = -1;
+    let bestOverlap = 0;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineTop = line.bbox.y;
+      const lineBottom = line.bbox.y + line.bbox.h;
+
+      // Check if word center is within line bounds
+      if (wordCenterY >= lineTop && wordCenterY <= lineBottom) {
+        const overlap = Math.min(lineBottom, word.bbox.y + word.bbox.h) -
+                       Math.max(lineTop, word.bbox.y);
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          bestLineIdx = i;
+        }
+      }
+    }
+
+    // If no line found, assign to closest line
+    if (bestLineIdx === -1) {
+      let minDist = Infinity;
+      for (let i = 0; i < lines.length; i++) {
+        const lineCenterY = lines[i].bbox.y + lines[i].bbox.h / 2;
+        const dist = Math.abs(wordCenterY - lineCenterY);
+        if (dist < minDist) {
+          minDist = dist;
+          bestLineIdx = i;
+        }
+      }
+    }
+
+    if (bestLineIdx >= 0) {
+      const result = results[bestLineIdx];
+      // Append word text (with space separator)
+      result.text = result.text ? `${result.text} ${word.text}` : word.text;
+      // Add symbols as characters
+      for (const symbol of word.symbols) {
+        result.characters.push({
+          text: symbol.text,
+          confidence: symbol.confidence,
+          bbox: symbol.bbox,
+          lineIndex: bestLineIdx,
+          pageIndex,
+        });
+      }
+    }
+  }
+
+  // Calculate confidence for each line
+  for (const result of results) {
+    if (result.characters.length > 0) {
+      const totalConf = result.characters.reduce((sum, c) => sum + c.confidence, 0);
+      result.confidence = totalConf / result.characters.length;
+    }
+  }
+
+  return results;
+}
+
+// OCR using Google Cloud Vision API
 async function performOCR(
   canvas: HTMLCanvasElement,
   lines: DetectedLine[],
   options: PipelineOptions,
   pageIndex: number = 0
 ): Promise<ExtractedLineWithChars[]> {
-  const results: ExtractedLineWithChars[] = [];
-
-  reportProgress(options, "ocr", "Initializing text recognition...", 0);
-
-  // Get or initialize Tesseract worker
-  const worker = await getWorker();
+  reportProgress(options, "ocr", "Sending to Cloud Vision...", 0);
 
   if (options.signal?.aborted) {
     throw new Error("Pipeline cancelled");
   }
 
-  for (let i = 0; i < lines.length; i++) {
+  try {
+    // Convert canvas to base64
+    const imageB64 = canvasToBase64(canvas);
+
+    reportProgress(options, "ocr", "Processing with Cloud Vision...", 0.3);
+
+    // Call Cloud Vision API
+    const ocrResult = await api.ocr(imageB64);
+
     if (options.signal?.aborted) {
       throw new Error("Pipeline cancelled");
     }
 
-    reportProgress(options, "ocr", `Recognizing line ${i + 1}/${lines.length}`, i / lines.length);
+    reportProgress(options, "ocr", "Mapping text to lines...", 0.8);
 
-    const line = lines[i];
+    // Assign words to detected lines
+    const results = assignWordsToLines(ocrResult.words, lines, pageIndex);
 
-    // Crop the line region from the canvas
-    const lineCanvas = cropCanvas(canvas, line.bbox);
+    reportProgress(options, "ocr", "OCR complete", 1);
 
-    try {
-      // Run OCR on the cropped line
-      const result = await worker.recognize(lineCanvas);
+    return results;
+  } catch (err) {
+    console.error("Cloud Vision OCR failed:", err);
 
-      // Extract text and confidence
-      const text = result.data.text.trim();
-      const confidence = result.data.confidence / 100; // Tesseract returns 0-100
-
-      // Extract character-level data for handwriting analysis
-      // Tesseract structure: Page → Lines → Words → Symbols
-      // Use type assertion as Tesseract types are incomplete
-      const characters: CharacterData[] = [];
-      const ocrPageData = result.data as {
-        words?: Array<{
-          symbols?: Array<{
-            text: string;
-            confidence: number;
-            bbox: { x0: number; y0: number; x1: number; y1: number };
-          }>;
-        }>;
-      };
-
-      if (ocrPageData.words) {
-        for (const word of ocrPageData.words) {
-          if (word.symbols) {
-            for (const symbol of word.symbols) {
-              characters.push({
-                text: symbol.text,
-                confidence: symbol.confidence / 100,
-                bbox: {
-                  x: symbol.bbox.x0 + line.bbox.x, // Adjust to full image coords
-                  y: symbol.bbox.y0 + line.bbox.y,
-                  w: symbol.bbox.x1 - symbol.bbox.x0,
-                  h: symbol.bbox.y1 - symbol.bbox.y0,
-                },
-                lineIndex: i,
-                pageIndex,
-              });
-            }
-          }
-        }
-      }
-
-      results.push({
-        lineIndex: i,
-        text,
-        confidence,
-        bbox: line.bbox,
-        characters,
-        pageIndex,
-      });
-    } catch (err) {
-      // If OCR fails for a line, mark as low confidence
-      console.warn(`OCR failed for line ${i}:`, err);
-      results.push({
-        lineIndex: i,
-        text: "",
-        confidence: 0,
-        bbox: line.bbox,
-        characters: [],
-        pageIndex,
-      });
-    }
+    // Return empty results for all lines on failure
+    return lines.map((line, i) => ({
+      lineIndex: i,
+      text: "",
+      confidence: 0,
+      bbox: line.bbox,
+      characters: [],
+      pageIndex,
+    }));
   }
-
-  return results;
 }
 
 // Verify content against expected text using real comparison

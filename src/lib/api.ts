@@ -2,6 +2,30 @@ import type { UploadReportRequest, UploadReportResponse, GetReportResponse } fro
 
 const API_BASE = "";
 
+// OCR API types
+export interface OcrRequest {
+  imageB64: string;
+}
+
+export interface OcrSymbol {
+  text: string;
+  confidence: number;
+  bbox: { x: number; y: number; w: number; h: number };
+}
+
+export interface OcrWord {
+  text: string;
+  confidence: number;
+  bbox: { x: number; y: number; w: number; h: number };
+  symbols: OcrSymbol[];
+}
+
+export interface OcrResponse {
+  text: string;
+  confidence: number;
+  words: OcrWord[];
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -34,4 +58,11 @@ export const api = {
 
   // Health check
   health: () => request<{ status: string }>("/api/health"),
+
+  // OCR - Google Cloud Vision
+  ocr: (imageB64: string) =>
+    request<OcrResponse>("/api/ocr", {
+      method: "POST",
+      body: JSON.stringify({ imageB64 }),
+    }),
 };
