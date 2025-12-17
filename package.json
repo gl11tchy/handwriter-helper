@@ -1,28 +1,24 @@
 {
   "name": "handwriter-helper",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview",
-    "db:migrate": "wrangler d1 execute handwriter-helper-db --file=./migrations/0001_initial.sql",
-    "db:migrate:local": "wrangler d1 execute handwriter-helper-db --local --file=./migrations/0001_initial.sql"
+    "preview": "vite preview"
   },
   "dependencies": {
+    "@radix-ui/react-slot": "^1.0.0",
+    "class-variance-authority": "^0.7.0",
+    "clsx": "^2.0.0",
+    "lucide-react": "^0.460.0",
+    "pdfjs-dist": "^5.4.449",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.0.0",
-    "@tanstack/react-query": "^5.0.0",
-    "better-auth": "^1.0.0",
-    "kysely": "^0.27.0",
-    "kysely-d1": "^0.4.0",
-    "lucide-react": "^0.460.0",
-    "@radix-ui/react-slot": "^1.0.0",
-    "clsx": "^2.0.0",
     "tailwind-merge": "^2.0.0",
-    "class-variance-authority": "^0.7.0"
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.0.0",
