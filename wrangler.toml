@@ -1,0 +1,20 @@
+name = "handwriter-helper"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
+main = "./worker/index.ts"
+
+[assets]
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "handwriter-helper-db"
+database_id = ""
+
+[[r2_buckets]]
+binding = "STORAGE"
+bucket_name = "handwriter-helper-storage"
+
+[vars]
+ENVIRONMENT = "production"
+APP_URL = "https://handwriter-helper.spinitup.dev"
