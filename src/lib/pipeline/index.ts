@@ -437,8 +437,13 @@ function detectLines(
   // If we detected too few or too many lines, adjust
   if (lines.length === 0) {
     // Fallback: divide image into equal parts
-    const lineHeight = Math.floor(height / expectedLineCount);
-    for (let i = 0; i < expectedLineCount; i++) {
+    // Minimum 10px per line for any text to be readable
+    const minLineHeight = 10;
+    const maxFeasibleLines = Math.floor(height / minLineHeight);
+    const actualLineCount = Math.min(expectedLineCount, maxFeasibleLines);
+    const lineHeight = actualLineCount > 0 ? Math.floor(height / actualLineCount) : height;
+
+    for (let i = 0; i < actualLineCount; i++) {
       lines.push({
         lineIndex: i,
         bbox: {
@@ -868,6 +873,15 @@ function computeQualityGate(
   expectedLineCount: number
 ): QualityGate {
   const reasons: string[] = [];
+
+  // Check if we detected far fewer lines than expected (image too small)
+  if (extracted.length < expectedLineCount * 0.5) {
+    reasons.push(
+      `Only ${extracted.length} lines detected out of ${expectedLineCount} expected. ` +
+      `The image may be too small or low resolution for this many lines.`
+    );
+    return { status: "ungradable", reasons, confidenceCoverage: extracted.length / expectedLineCount };
+  }
 
   // Calculate coverage
   const verifiedLines = extracted.filter((l) => l.confidence >= LINE_CONFIDENCE_UNCERTAIN).length;

@@ -1,10 +1,9 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 
 // Routes
 import Home from "@/routes/Home";
-import Create from "@/routes/Create";
 import AssignmentRunner from "@/routes/AssignmentRunner";
 import ReportViewer from "@/routes/ReportViewer";
 import About from "@/routes/About";
@@ -27,14 +26,6 @@ function AppRoutes() {
         element={
           <AppLayout>
             <Home />
-          </AppLayout>
-        }
-      />
-      <Route
-        path="/create"
-        element={
-          <AppLayout>
-            <Create />
           </AppLayout>
         }
       />
@@ -62,6 +53,7 @@ function AppRoutes() {
           </AppLayout>
         }
       />
+      <Route path="/create" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

@@ -1,12 +1,10 @@
 import { Link, useLocation } from "react-router-dom";
-import { PenLine, Home, Plus, Info } from "lucide-react";
+import { PenLine, Home, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { to: "/", label: "Home", icon: Home },
-  { to: "/create", label: "Create", icon: Plus },
   { to: "/about", label: "About", icon: Info },
 ];
 
@@ -18,7 +16,7 @@ export function Header() {
       <div className="container flex h-14 items-center">
         <Link to="/" className="flex items-center gap-2 mr-6">
           <PenLine className="h-6 w-6 text-primary" />
-          <span className="font-semibold text-lg hidden sm:inline">Handwriter Helper</span>
+          <span className="text-2xl hidden sm:inline font-brand">writinglines.com</span>
         </Link>
 
         <nav className="flex items-center gap-1 flex-1">
@@ -45,10 +43,6 @@ export function Header() {
             );
           })}
         </nav>
-
-        <div className="flex items-center gap-2">
-          <ThemeToggle />
-        </div>
       </div>
     </header>
   );
