@@ -104,6 +104,8 @@ export default function Home() {
   };
 
   const handleCreateModalClose = (open: boolean) => {
+    // Prevent closing while async operation is in flight
+    if (!open && isGenerating) return;
     if (!open) {
       resetCreateWizard();
     }
@@ -235,12 +237,13 @@ export default function Home() {
   };
 
   const handleGradeModalClose = (open: boolean) => {
-    if (!open && gradeState !== "processing") {
+    // Prevent closing while async operations are in flight
+    const busy = gradeState === "processing" || isGeneratingReport;
+    if (!open && busy) return;
+    if (!open) {
       resetGrade();
     }
-    if (gradeState !== "processing") {
-      setGradeModalOpen(open);
-    }
+    setGradeModalOpen(open);
   };
 
   const handleFindingClick = useCallback((finding: Finding) => {
