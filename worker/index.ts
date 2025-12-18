@@ -111,6 +111,7 @@ interface AssignmentPayload {
   numbering: { required: false } | { required: true; startAt: number; format: "dot" | "paren" | "dash" };
   expectedContent: { mode: "perLine"; lines: string[] };
   precisionMode: "max";
+  notifyEmail?: string;
 }
 
 interface CreateAssignmentRequest {
@@ -119,6 +120,7 @@ interface CreateAssignmentRequest {
   paperType: "ruled" | "blank" | "either";
   numbering: { required: false } | { required: true; startAt: number; format: "dot" | "paren" | "dash" };
   expectedContent: { mode: "perLine"; lines: string[] };
+  notifyEmail?: string;
 }
 
 interface StoredAssignment {
@@ -407,6 +409,7 @@ export default {
           numbering: body.numbering || { required: false },
           expectedContent: body.expectedContent,
           precisionMode: "max",
+          ...(body.notifyEmail && { notifyEmail: body.notifyEmail }),
         };
 
         // Sign the payload

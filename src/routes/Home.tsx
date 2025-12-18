@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { Plus, Copy, Check, ChevronRight, CheckCircle2, Upload, Play, RotateCcw, ExternalLink, AlertTriangle, FileCheck } from "lucide-react";
+import { Plus, Copy, Check, ChevronRight, CheckCircle2, Upload, Play, RotateCcw, ExternalLink, AlertTriangle, FileCheck, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,6 +49,8 @@ export default function Home() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [notifyEmailEnabled, setNotifyEmailEnabled] = useState(false);
+  const [notifyEmail, setNotifyEmail] = useState("");
 
   // ========== QUICK GRADE STATE ==========
   const [gradeLineCount, setGradeLineCount] = useState(5);
@@ -80,6 +82,7 @@ export default function Home() {
           ? { required: true, startAt: numberingStartAt, format: numberingFormat }
           : { required: false },
         expectedContent: { mode: "perLine", lines },
+        ...(notifyEmailEnabled && notifyEmail.trim() && { notifyEmail: notifyEmail.trim() }),
       });
 
       setAssignmentId(response.assignmentId);
@@ -110,6 +113,8 @@ export default function Home() {
     setNumberingFormat("dot");
     setAssignmentId(null);
     setCreateError(null);
+    setNotifyEmailEnabled(false);
+    setNotifyEmail("");
   };
 
   const handleCreateModalClose = (open: boolean) => {
@@ -388,6 +393,35 @@ export default function Home() {
                         <SelectItem value="dash">1- 2- 3-</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <Label>Send Results to Email</Label>
+                </div>
+                <Switch
+                  checked={notifyEmailEnabled}
+                  onCheckedChange={setNotifyEmailEnabled}
+                />
+              </div>
+
+              {notifyEmailEnabled && (
+                <div className="pl-4 border-l-2 border-muted">
+                  <div className="space-y-2">
+                    <Label htmlFor="notifyEmail">Email Address</Label>
+                    <Input
+                      id="notifyEmail"
+                      type="email"
+                      placeholder="teacher@school.edu"
+                      value={notifyEmail}
+                      onChange={(e) => setNotifyEmail(e.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Results will be emailed when student submits
+                    </p>
                   </div>
                 </div>
               )}

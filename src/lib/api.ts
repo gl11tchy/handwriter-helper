@@ -9,6 +9,7 @@ export interface CreateAssignmentRequest {
   paperType?: "ruled" | "blank" | "either";
   numbering?: { required: false } | { required: true; startAt: number; format: "dot" | "paren" | "dash" };
   expectedContent: { mode: "perLine"; lines: string[] };
+  notifyEmail?: string;
 }
 
 export interface CreateAssignmentResponse {

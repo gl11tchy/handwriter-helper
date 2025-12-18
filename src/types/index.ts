@@ -25,6 +25,7 @@ export type AssignmentPayload = {
   numbering: NumberingRule;
   expectedContent: ExpectedContent;
   precisionMode: "max";
+  notifyEmail?: string;
 };
 
 
