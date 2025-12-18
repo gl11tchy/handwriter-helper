@@ -309,6 +309,11 @@ export default {
       }
     }
 
+    // Only handle /api/* routes - serve static assets for frontend routes
+    if (!url.pathname.startsWith("/api/")) {
+      return env.ASSETS.fetch(request);
+    }
+
     try {
       // Health check
       if (url.pathname === "/api/health") {
