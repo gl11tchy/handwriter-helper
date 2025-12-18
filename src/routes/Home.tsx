@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { PenLine, Plus } from "lucide-react";
+import { PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export default function Home() {
@@ -15,13 +15,12 @@ export default function Home() {
               Handwriting Assignment Grader
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl">
-              Create signed assignments, assess handwritten submissions in-browser, and share encrypted results.
+              Create an assignment or grade an existing one. Our handwriting detection software analyzes the work and generates a detailed report.
             </p>
             <div className="pt-4">
               <Button size="lg" asChild>
                 <Link to="/create">
-                  <Plus className="mr-2 h-5 w-5" />
-                  Create Assignment
+                  Get Started
                 </Link>
               </Button>
             </div>
