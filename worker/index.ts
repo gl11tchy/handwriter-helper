@@ -319,6 +319,10 @@ export default {
 
       // Only handle /api/* routes - serve static assets for frontend routes
       if (!url.pathname.startsWith("/api/")) {
+        if (!env.ASSETS) {
+          console.error("ASSETS binding not configured");
+          return new Response("Static assets not configured", { status: 503 });
+        }
         return env.ASSETS.fetch(request);
       }
       // Health check
