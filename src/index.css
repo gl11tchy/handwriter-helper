@@ -114,6 +114,11 @@ body {
   animation: lines 4s linear infinite;
 }
 
+.lines-fade {
+  mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%, black 70%, transparent 100%);
+}
+
 /* Container utility */
 .container {
   margin-inline: auto;
