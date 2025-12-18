@@ -275,7 +275,7 @@ export default function Home() {
                 <Plus className="mr-2 h-5 w-5" />
                 Create Assignment
               </Button>
-              <Button size="lg" variant="outline" className="border-foreground/60 text-foreground transition-all duration-200 hover:scale-[1.02] hover:border-primary/70 hover:bg-primary/10 hover:shadow-[0_0_15px_rgba(212,175,55,0.15)]" onClick={() => setGradeModalOpen(true)}>
+              <Button size="lg" variant="outline" className="border-white/60 text-white transition-all duration-200 hover:scale-[1.02] hover:border-primary/70 hover:bg-primary/10 hover:shadow-[0_0_15px_rgba(212,175,55,0.15)]" onClick={() => setGradeModalOpen(true)}>
                 <FileCheck className="mr-2 h-5 w-5" />
                 Upload & Grade
               </Button>
