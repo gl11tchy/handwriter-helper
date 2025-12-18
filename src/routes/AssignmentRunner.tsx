@@ -13,6 +13,7 @@ import {
   FileText,
   Loader2,
   ShieldAlert,
+  Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -59,6 +60,7 @@ export default function AssignmentRunner() {
 
   const [reportLink, setReportLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
 
   // Fetch assignment from server (with signature verification)
   useEffect(() => {
@@ -164,19 +166,22 @@ export default function AssignmentRunner() {
       const reportJson = JSON.stringify(report);
       const { ciphertextB64, nonceB64 } = await encryptData(reportJson, encKey);
 
-      // Upload to server
-      const { reportId } = await api.uploadReport({
+      // Upload to server with assignment context for email notification
+      const { reportId, emailSent: wasEmailSent } = await api.uploadReport({
         ciphertextB64,
         nonceB64,
         meta: {
           createdAt: report.createdAt,
           size: ciphertextB64.length,
         },
+        assignmentId,
+        encryptionKey: keyB64,
       });
 
-      // Build report URL with key in fragment
+      // Build actual report URL with key in fragment
       const url = buildReportUrl(reportId, keyB64);
       setReportLink(url);
+      setEmailSent(wasEmailSent || false);
       setState("results");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate report link");
@@ -196,6 +201,7 @@ export default function AssignmentRunner() {
     setResult(null);
     setProgress(null);
     setReportLink(null);
+    setEmailSent(false);
     setState("ready");
   }, []);
 
@@ -399,6 +405,15 @@ export default function AssignmentRunner() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {emailSent && (
+                    <Alert className="bg-green-500/10 border-green-500/50">
+                      <Mail className="h-4 w-4 text-green-600" />
+                      <AlertTitle className="text-green-600">Email Sent</AlertTitle>
+                      <AlertDescription>
+                        Your teacher has been notified by email with the report link.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <div className="flex gap-2">
                     <input
                       readOnly

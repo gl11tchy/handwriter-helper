@@ -85,6 +85,46 @@ function base64UrlToArrayBuffer(base64url: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+// Send email via Resend API
+async function sendResultsEmail(
+  to: string,
+  reportUrl: string,
+  assignmentText: string,
+  apiKey: string
+): Promise<boolean> {
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: "Writing Lines <noreply@writinglines.com>",
+        to: [to],
+        subject: "Assignment Results Submitted",
+        html: `
+          <h2>Assignment Results Ready</h2>
+          <p>A student has submitted their handwriting assignment.</p>
+          <p><strong>Assignment:</strong> "${assignmentText}"</p>
+          <p><a href="${reportUrl}" style="display: inline-block; padding: 12px 24px; background-color: #d4af37; color: #000; text-decoration: none; border-radius: 6px; font-weight: bold;">View Results</a></p>
+          <p style="color: #666; font-size: 14px; margin-top: 20px;">This link contains the encryption key needed to view the report. Keep it safe.</p>
+        `,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("Resend API error:", await response.text());
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error("Failed to send email:", error);
+    return false;
+  }
+}
+
 interface ReportMeta {
   createdAt: string;
   size: number;
@@ -94,6 +134,8 @@ interface UploadRequest {
   ciphertextB64: string;
   nonceB64: string;
   meta: ReportMeta;
+  assignmentId?: string;
+  encryptionKey?: string; // Base64 encryption key for building report URL in email
 }
 
 interface OcrRequest {
@@ -562,8 +604,33 @@ export default {
           },
         });
 
+        // Send email notification if assignment has notifyEmail configured
+        let emailSent = false;
+        if (body.assignmentId && body.encryptionKey && env.RESEND_API_KEY) {
+          try {
+            const assignmentObject = await env.STORAGE.get(`assignments/${body.assignmentId}.json`);
+            if (assignmentObject) {
+              const stored = await assignmentObject.json() as StoredAssignment;
+              if (stored?.payload?.notifyEmail) {
+                const assignmentText = stored.payload.expectedContent.lines[0] || "Handwriting assignment";
+                // Build the full report URL with the encryption key in the fragment
+                const reportUrl = `${env.APP_URL}/report/${reportId}#${body.encryptionKey}`;
+                emailSent = await sendResultsEmail(
+                  stored.payload.notifyEmail,
+                  reportUrl,
+                  assignmentText,
+                  env.RESEND_API_KEY
+                );
+              }
+            }
+          } catch (emailError) {
+            console.error("Error sending notification email:", emailError);
+            // Don't fail the request if email fails
+          }
+        }
+
         return Response.json(
-          { reportId },
+          { reportId, emailSent },
           { status: 201, headers: corsHeaders }
         );
       }

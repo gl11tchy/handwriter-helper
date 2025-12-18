@@ -26,3 +26,4 @@ invocation_logs = true
 # Secrets must be set via wrangler:
 # wrangler secret put GOOGLE_CLOUD_API_KEY
 # wrangler secret put SIGNING_SECRET
+# wrangler secret put RESEND_API_KEY
