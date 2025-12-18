@@ -20,7 +20,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
 import { runPipeline, type PipelineResult } from "@/lib/pipeline";
 import { UploadDropzone } from "@/components/upload-dropzone";
@@ -62,6 +61,7 @@ export default function Create() {
   const [reportCopied, setReportCopied] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
+  const [gradedPayload, setGradedPayload] = useState<AssignmentPayload | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // ========== CREATE ASSIGNMENT LOGIC ==========
@@ -150,9 +150,12 @@ export default function Create() {
       expectedStyle: "print",
       paperType: "either",
       numbering: { required: false },
-      expectedContent: { mode: "perLine", lines: gradeExpectedLines },
+      expectedContent: { mode: "perLine", lines: [...gradeExpectedLines] },
       precisionMode: "max",
     };
+
+    // Store payload for report generation
+    setGradedPayload(localPayload);
 
     try {
       const result = await runPipeline(gradeFile, localPayload, {
@@ -177,29 +180,17 @@ export default function Create() {
   }, []);
 
   const handleGenerateReportLink = useCallback(async () => {
-    if (!gradeResult || !gradeFile) return;
+    if (!gradeResult || !gradeFile || !gradedPayload) return;
 
     setIsGeneratingReport(true);
     setGradeError(null);
 
     try {
-      const localPayload: AssignmentPayload = {
-        version: 1,
-        assignmentId: `local-${Date.now()}`,
-        createdAt: new Date().toISOString(),
-        requiredLineCount: gradeLineCount,
-        expectedStyle: "print",
-        paperType: "either",
-        numbering: { required: false },
-        expectedContent: { mode: "perLine", lines: gradeExpectedLines },
-        precisionMode: "max",
-      };
-
       const report: Report = {
         reportId: "",
         createdAt: new Date().toISOString(),
-        assignmentId: localPayload.assignmentId,
-        assignmentPayload: localPayload,
+        assignmentId: gradedPayload.assignmentId,
+        assignmentPayload: gradedPayload,
         inputFile: {
           name: gradeFile.name,
           type: gradeFile.type,
@@ -234,7 +225,7 @@ export default function Create() {
     } finally {
       setIsGeneratingReport(false);
     }
-  }, [gradeResult, gradeFile, gradeLineCount, gradeExpectedLines]);
+  }, [gradeResult, gradeFile, gradedPayload]);
 
   const copyReportLink = useCallback(async () => {
     if (!reportLink) return;
@@ -251,6 +242,7 @@ export default function Create() {
     setGradeError(null);
     setGradeState("input");
     setSelectedFindingId(null);
+    setGradedPayload(null);
   };
 
   const handleFindingClick = useCallback((finding: Finding) => {
@@ -553,7 +545,13 @@ export default function Create() {
 
               {/* Report Link Generation */}
               <Card>
-                <CardContent className="py-4">
+                <CardContent className="py-4 space-y-3">
+                  {gradeError && (
+                    <Alert variant="destructive">
+                      <AlertTriangle className="h-4 w-4" />
+                      <AlertDescription>{gradeError}</AlertDescription>
+                    </Alert>
+                  )}
                   {reportLink ? (
                     <div className="space-y-3">
                       <div className="flex items-center gap-2 text-sm text-green-600">
@@ -597,22 +595,6 @@ export default function Create() {
             </div>
           )}
         </div>
-      </div>
-
-      {/* Mobile tabs view */}
-      <div className="lg:hidden mt-8">
-        <Tabs defaultValue="create">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="create">Create</TabsTrigger>
-            <TabsTrigger value="grade">Quick Grade</TabsTrigger>
-          </TabsList>
-          <TabsContent value="create">
-            {/* Mobile create content - same as left column */}
-          </TabsContent>
-          <TabsContent value="grade">
-            {/* Mobile grade content - same as right column */}
-          </TabsContent>
-        </Tabs>
       </div>
     </div>
   );
