@@ -434,8 +434,8 @@ export default function AssignmentRunner() {
                     <AlertTriangle className="h-4 w-4" />
                     <AlertTitle>Important</AlertTitle>
                     <AlertDescription>
-                      {emailSent
-                        ? "The decryption key was shared with your teacher via email. Only people with this link can view the report."
+                      {payload?.notifyEmail
+                        ? "The decryption key was shared with the server for email notification. Only people with this link can view the report."
                         : "The decryption key is in the URL fragment and is not sent to the server. Only people with this exact link can view the report."}
                     </AlertDescription>
                   </Alert>
