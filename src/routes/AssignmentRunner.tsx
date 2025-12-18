@@ -365,6 +365,25 @@ export default function AssignmentRunner() {
           </Card>
         )}
 
+        {/* Error state - when processing fails before generating results */}
+        {state === "results" && !result && error && (
+          <Card>
+            <CardContent className="py-8">
+              <div className="flex flex-col items-center gap-4 text-center">
+                <XCircle className="h-12 w-12 text-destructive" />
+                <div>
+                  <h3 className="text-lg font-semibold">Processing Failed</h3>
+                  <p className="text-muted-foreground mt-1">{error}</p>
+                </div>
+                <Button onClick={resetRunner} variant="outline">
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Try Again
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {state === "results" && result && (
           <>
             {/* Score Card */}
