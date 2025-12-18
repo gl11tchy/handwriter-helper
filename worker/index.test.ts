@@ -234,6 +234,219 @@ describe("Worker", () => {
       expect(response.status).toBe(503);
       expect(data.error).toBe("Signing service not configured");
     });
+
+    it("returns 503 when signing secret is missing during GET", async () => {
+      // First create an assignment with a valid env
+      const createResponse = await worker.fetch(
+        createRequest("/api/assignment", {
+          method: "POST",
+          body: JSON.stringify({
+            requiredLineCount: 3,
+            expectedStyle: "cursive",
+            expectedContent: { mode: "perLine", lines: ["Test line"] },
+          }),
+        }),
+        env
+      );
+      const { assignmentId } = (await createResponse.json()) as AssignmentCreateResponse;
+
+      // Try to retrieve with missing signing secret
+      const envWithoutSecret = { ...env, SIGNING_SECRET: "" };
+      const getRequest = createRequest(`/api/assignment/${assignmentId}`);
+      const getResponse = await worker.fetch(getRequest, envWithoutSecret);
+      const getData = (await getResponse.json()) as ErrorResponse;
+
+      expect(getResponse.status).toBe(503);
+      expect(getData.error).toBe("Signing service not configured");
+    });
+
+    it("handles corrupted JSON in storage gracefully", async () => {
+      // Manually put corrupted data in storage
+      const assignmentId = "test-corrupted-json";
+      await env.STORAGE.put(
+        `assignments/${assignmentId}.json`,
+        "not valid json {{{",
+        { httpMetadata: { contentType: "application/json" } }
+      );
+
+      const request = createRequest(`/api/assignment/${assignmentId}`);
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(500);
+      expect(data.error).toContain("corrupted");
+    });
+
+    it("handles missing payload in stored data", async () => {
+      // Manually put data missing the payload field
+      const assignmentId = "test-missing-payload";
+      await env.STORAGE.put(
+        `assignments/${assignmentId}.json`,
+        JSON.stringify({ signature: "some-signature" }),
+        { httpMetadata: { contentType: "application/json" } }
+      );
+
+      const request = createRequest(`/api/assignment/${assignmentId}`);
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(500);
+      expect(data.error).toContain("incomplete");
+    });
+
+    it("handles missing signature in stored data", async () => {
+      // Manually put data missing the signature field
+      const assignmentId = "test-missing-signature";
+      await env.STORAGE.put(
+        `assignments/${assignmentId}.json`,
+        JSON.stringify({ payload: { assignmentId: "test", version: 1 } }),
+        { httpMetadata: { contentType: "application/json" } }
+      );
+
+      const request = createRequest(`/api/assignment/${assignmentId}`);
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(500);
+      expect(data.error).toContain("incomplete");
+    });
+
+    it("returns 403 for tampered payload", async () => {
+      // First create a valid assignment
+      const createResponse = await worker.fetch(
+        createRequest("/api/assignment", {
+          method: "POST",
+          body: JSON.stringify({
+            requiredLineCount: 3,
+            expectedStyle: "cursive",
+            expectedContent: { mode: "perLine", lines: ["Test line"] },
+          }),
+        }),
+        env
+      );
+      const { assignmentId } = (await createResponse.json()) as AssignmentCreateResponse;
+
+      // Get the stored data and tamper with it
+      const stored = await env.STORAGE.get(`assignments/${assignmentId}.json`);
+      const data = await stored!.json() as { payload: Record<string, unknown>; signature: string };
+
+      // Modify the payload but keep the original signature
+      data.payload.requiredLineCount = 999;
+      await env.STORAGE.put(
+        `assignments/${assignmentId}.json`,
+        JSON.stringify(data),
+        { httpMetadata: { contentType: "application/json" } }
+      );
+
+      const request = createRequest(`/api/assignment/${assignmentId}`);
+      const response = await worker.fetch(request, env);
+      const responseData = (await response.json()) as ErrorResponse & { tampered?: boolean };
+
+      expect(response.status).toBe(403);
+      expect(responseData.tampered).toBe(true);
+      expect(responseData.error).toContain("invalid");
+    });
+
+    it("returns 403 for invalid base64 signature", async () => {
+      // Manually put data with an invalid signature (not valid base64)
+      const assignmentId = "test-invalid-sig";
+      await env.STORAGE.put(
+        `assignments/${assignmentId}.json`,
+        JSON.stringify({
+          payload: {
+            version: 1,
+            assignmentId: "test-invalid-sig",
+            createdAt: new Date().toISOString(),
+            requiredLineCount: 3,
+            expectedStyle: "print",
+            paperType: "ruled",
+            numbering: { required: false },
+            expectedContent: { mode: "perLine", lines: ["Test"] },
+            precisionMode: "max",
+          },
+          signature: "!!!not-valid-base64!!!",
+        }),
+        { httpMetadata: { contentType: "application/json" } }
+      );
+
+      const request = createRequest(`/api/assignment/${assignmentId}`);
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse & { tampered?: boolean };
+
+      expect(response.status).toBe(403);
+      expect(data.tampered).toBe(true);
+    });
+
+    it("handles storage errors gracefully", async () => {
+      // Create an env with a failing storage
+      const failingStorage = {
+        ...createMockR2(),
+        get: vi.fn().mockRejectedValue(new Error("Storage unavailable")),
+      } as unknown as R2Bucket;
+      const envWithFailingStorage = createMockEnv({ STORAGE: failingStorage });
+
+      const request = createRequest("/api/assignment/some-id");
+      const response = await worker.fetch(request, envWithFailingStorage);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(500);
+      expect(data.error).toContain("storage");
+    });
+
+    it("verifies signature correctly when payload has all fields", async () => {
+      // Create assignment with all optional fields
+      const createResponse = await worker.fetch(
+        createRequest("/api/assignment", {
+          method: "POST",
+          body: JSON.stringify({
+            requiredLineCount: 5,
+            expectedStyle: "print",
+            paperType: "ruled",
+            numbering: { required: true, startAt: 1, format: "dot" },
+            expectedContent: { mode: "perLine", lines: ["Line 1", "Line 2", "Line 3", "Line 4", "Line 5"] },
+          }),
+        }),
+        env
+      );
+
+      expect(createResponse.status).toBe(201);
+      const { assignmentId, payload } = (await createResponse.json()) as AssignmentCreateResponse & { payload: Record<string, unknown> };
+
+      // Verify all fields are present in payload
+      expect(payload.version).toBe(1);
+      expect(payload.assignmentId).toBe(assignmentId);
+      expect(payload.requiredLineCount).toBe(5);
+      expect(payload.expectedStyle).toBe("print");
+      expect(payload.paperType).toBe("ruled");
+      expect(payload.precisionMode).toBe("max");
+
+      // Now retrieve it
+      const getResponse = await worker.fetch(
+        createRequest(`/api/assignment/${assignmentId}`),
+        env
+      );
+
+      expect(getResponse.status).toBe(200);
+      const getData = (await getResponse.json()) as AssignmentGetResponse;
+      expect(getData.verified).toBe(true);
+    });
+
+    it("rejects assignment with empty lines array", async () => {
+      const request = createRequest("/api/assignment", {
+        method: "POST",
+        body: JSON.stringify({
+          requiredLineCount: 5,
+          expectedStyle: "print",
+          expectedContent: { mode: "perLine", lines: [] },
+        }),
+      });
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(400);
+      expect(data.error).toBe("Missing required fields");
+    });
   });
 
   describe("Report endpoints", () => {
@@ -430,7 +643,13 @@ describe("Worker", () => {
 
   describe("404 handling", () => {
     it("returns 404 for unknown API routes", async () => {
-      const request = createRequest("/api/unknown");
+      // Use a unique IP to avoid rate limiting from previous tests
+      const request = new Request("https://example.com/api/unknown", {
+        headers: {
+          "Content-Type": "application/json",
+          "CF-Connecting-IP": "192.168.1.100",
+        },
+      });
       const response = await worker.fetch(request, env);
       const data = (await response.json()) as ErrorResponse;
 

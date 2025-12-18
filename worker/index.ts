@@ -283,38 +283,44 @@ async function callGoogleVisionOCR(imageB64: string, apiKey: string): Promise<Oc
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const clientIP = getClientIP(request);
-
-    // CORS headers - allow the app origin
-    const corsHeaders: Record<string, string> = {
-      "Access-Control-Allow-Origin": env.APP_URL || "*",
+    // Default CORS headers for error responses
+    const defaultCorsHeaders: Record<string, string> = {
+      "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400",
     };
 
-    // Handle preflight
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders });
-    }
-
-    // Apply rate limiting to all API routes
-    if (url.pathname.startsWith("/api/")) {
-      if (!checkRateLimit(clientIP)) {
-        return Response.json(
-          { error: "Too many requests. Please try again later." },
-          { status: 429, headers: corsHeaders }
-        );
-      }
-    }
-
-    // Only handle /api/* routes - serve static assets for frontend routes
-    if (!url.pathname.startsWith("/api/")) {
-      return env.ASSETS.fetch(request);
-    }
-
     try {
+      const url = new URL(request.url);
+      const clientIP = getClientIP(request);
+
+      // CORS headers - allow the app origin
+      const corsHeaders: Record<string, string> = {
+        "Access-Control-Allow-Origin": env.APP_URL || "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "86400",
+      };
+
+      // Handle preflight
+      if (request.method === "OPTIONS") {
+        return new Response(null, { headers: corsHeaders });
+      }
+
+      // Apply rate limiting to all API routes
+      if (url.pathname.startsWith("/api/")) {
+        if (!checkRateLimit(clientIP)) {
+          return Response.json(
+            { error: "Too many requests. Please try again later." },
+            { status: 429, headers: corsHeaders }
+          );
+        }
+      }
+
+      // Only handle /api/* routes - serve static assets for frontend routes
+      if (!url.pathname.startsWith("/api/")) {
+        return env.ASSETS.fetch(request);
+      }
       // Health check
       if (url.pathname === "/api/health") {
         return Response.json(
@@ -374,7 +380,12 @@ export default {
         const body = await request.json() as CreateAssignmentRequest;
 
         // Validate required fields
-        if (!body.requiredLineCount || !body.expectedStyle || !body.expectedContent?.lines) {
+        if (
+          !body.requiredLineCount ||
+          !body.expectedStyle ||
+          !body.expectedContent?.lines ||
+          body.expectedContent.lines.length === 0
+        ) {
           return Response.json(
             { error: "Missing required fields" },
             { status: 400, headers: corsHeaders }
@@ -579,7 +590,7 @@ export default {
       console.error("Worker error:", error);
       return Response.json(
         { error: "Internal server error" },
-        { status: 500, headers: corsHeaders }
+        { status: 500, headers: defaultCorsHeaders }
       );
     }
   },
