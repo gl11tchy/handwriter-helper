@@ -264,10 +264,10 @@ export default function Home() {
       <section className="py-20 md:py-32">
         <div className="container">
           <div className="flex flex-col items-center text-center space-y-6 max-w-3xl mx-auto">
-            <div className="h-12 overflow-hidden lines-fade">
+            <div className="h-10 overflow-hidden lines-fade">
               <div className="animate-lines" key={lineNum}>
-                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">{lineNum}. Assign a task. Grade handwriting. Generate a report.</p>
-                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">{lineNum + 1}. Assign a task. Grade handwriting. Generate a report.</p>
+                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-10">{lineNum}. Assign a task. Grade handwriting. Generate a report.</p>
+                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-10">{lineNum + 1}. Assign a task. Grade handwriting. Generate a report.</p>
               </div>
             </div>
             <div className="flex gap-4">
