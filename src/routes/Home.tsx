@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { PenLine, Key, FileText, Shield, Lock, Eye } from "lucide-react";
+import { PenLine, Plus, FileText, Shield, Lock, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -22,8 +22,8 @@ export default function Home() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 pt-4">
               <Button size="lg" asChild>
-                <Link to="/keyholder">
-                  <Key className="mr-2 h-5 w-5" />
+                <Link to="/create">
+                  <Plus className="mr-2 h-5 w-5" />
                   Create Assignment
                 </Link>
               </Button>
@@ -47,14 +47,13 @@ export default function Home() {
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mb-2">
                   <span className="text-lg font-bold text-primary">1</span>
                 </div>
-                <CardTitle className="text-lg">Keyholder Creates Assignment</CardTitle>
+                <CardTitle className="text-lg">Teacher Creates Assignment</CardTitle>
                 <CardDescription>
-                  Define required content, style requirements, and digitally sign the assignment
+                  Define what text students should write and get a shareable link
                 </CardDescription>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
-                The assignment is cryptographically signed, making it tamper-evident. Anyone can
-                verify its authenticity.
+                Takes 30 seconds. Just enter the expected text and share the link with your class.
               </CardContent>
             </Card>
 
@@ -63,14 +62,13 @@ export default function Home() {
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mb-2">
                   <span className="text-lg font-bold text-primary">2</span>
                 </div>
-                <CardTitle className="text-lg">Writer Submits Work</CardTitle>
+                <CardTitle className="text-lg">Student Submits Work</CardTitle>
                 <CardDescription>
-                  Open the assignment link, upload a photo or scan, and run local assessment
+                  Open the link, upload a photo of their handwriting, and get instant feedback
                 </CardDescription>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
-                All processing happens in your browser. Your images are never uploaded to any
-                server.
+                Our OCR technology checks their handwriting against the expected content automatically.
               </CardContent>
             </Card>
 
@@ -79,14 +77,13 @@ export default function Home() {
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mb-2">
                   <span className="text-lg font-bold text-primary">3</span>
                 </div>
-                <CardTitle className="text-lg">Share Results</CardTitle>
+                <CardTitle className="text-lg">View Results</CardTitle>
                 <CardDescription>
-                  Generate an encrypted report link and share it with the keyholder
+                  Get a detailed report with scores and any issues found
                 </CardDescription>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
-                Reports are encrypted client-side. The decryption key stays in the URL fragment
-                and is never sent to the server.
+                See exactly which lines matched, content verification scores, and handwriting quality checks.
               </CardContent>
             </Card>
           </div>
@@ -160,12 +157,12 @@ export default function Home() {
 
             <div className="flex gap-4 p-4">
               <div className="shrink-0">
-                <Key className="h-6 w-6 text-primary" />
+                <Plus className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <h3 className="font-semibold mb-1">Signature Verification</h3>
+                <h3 className="font-semibold mb-1">Easy to Use</h3>
                 <p className="text-sm text-muted-foreground">
-                  Anyone can verify assignment authenticity without special access.
+                  Create an assignment in seconds. No training required.
                 </p>
               </div>
             </div>
@@ -183,8 +180,8 @@ export default function Home() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
               <Button size="lg" asChild>
-                <Link to="/keyholder">
-                  <Key className="mr-2 h-5 w-5" />
+                <Link to="/create">
+                  <Plus className="mr-2 h-5 w-5" />
                   Create Assignment
                 </Link>
               </Button>

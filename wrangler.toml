@@ -13,3 +13,6 @@ bucket_name = "handwriter-helper-storage"
 [vars]
 ENVIRONMENT = "production"
 APP_URL = "https://handwriterhelper.com"
+
+# GOOGLE_CLOUD_API_KEY must be set as a secret:
+# wrangler secret put GOOGLE_CLOUD_API_KEY

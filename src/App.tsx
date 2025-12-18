@@ -4,7 +4,7 @@ import { Footer } from "@/components/layout/footer";
 
 // Routes
 import Home from "@/routes/Home";
-import Keyholder from "@/routes/Keyholder";
+import Create from "@/routes/Create";
 import AssignmentRunner from "@/routes/AssignmentRunner";
 import ReportViewer from "@/routes/ReportViewer";
 import About from "@/routes/About";
@@ -31,15 +31,15 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/keyholder"
+        path="/create"
         element={
           <AppLayout>
-            <Keyholder />
+            <Create />
           </AppLayout>
         }
       />
       <Route
-        path="/a"
+        path="/a/:assignmentId"
         element={
           <AppLayout>
             <AssignmentRunner />
