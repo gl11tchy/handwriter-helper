@@ -153,11 +153,15 @@ async function callGoogleVisionOCR(imageB64: string, apiKey: string): Promise<Oc
 
   const data = await response.json() as GoogleVisionResponse;
 
-  if (data.responses[0]?.error) {
+  if (!data.responses || data.responses.length === 0) {
+    throw new Error("Google Vision API returned empty response");
+  }
+
+  if (data.responses[0].error) {
     throw new Error(`Google Vision API error: ${data.responses[0].error.message}`);
   }
 
-  const fullText = data.responses[0]?.fullTextAnnotation;
+  const fullText = data.responses[0].fullTextAnnotation;
 
   if (!fullText) {
     return { text: "", confidence: 0, words: [] };
