@@ -429,13 +429,13 @@ export default {
       if (url.pathname.startsWith("/api/assignment/") && request.method === "GET") {
         const assignmentId = url.pathname.replace("/api/assignment/", "");
 
-        // Log for debugging
+        // Log for debugging (visible in Cloudflare logs only)
         console.log("GET assignment request:", { assignmentId, pathname: url.pathname });
 
         if (!/^[a-z0-9-]+$/i.test(assignmentId)) {
           console.log("Invalid assignment ID format:", assignmentId);
           return Response.json(
-            { error: "Invalid assignment ID format", debug: { assignmentId } },
+            { error: "Invalid assignment ID format" },
             { status: 400, headers: corsHeaders }
           );
         }
@@ -447,7 +447,7 @@ export default {
         } catch (storageError) {
           console.error("Storage error fetching assignment:", storageError);
           return Response.json(
-            { error: "Failed to fetch assignment from storage", debug: { assignmentId, storageError: String(storageError) } },
+            { error: "Failed to fetch assignment from storage" },
             { status: 500, headers: corsHeaders }
           );
         }
@@ -455,7 +455,7 @@ export default {
         if (!object) {
           console.log("Assignment not found in storage:", assignmentId);
           return Response.json(
-            { error: "Assignment not found", debug: { assignmentId } },
+            { error: "Assignment not found" },
             { status: 404, headers: corsHeaders }
           );
         }
@@ -467,7 +467,7 @@ export default {
         } catch (parseError) {
           console.error("JSON parse error for assignment:", parseError);
           return Response.json(
-            { error: "Assignment data is corrupted", debug: { assignmentId, parseError: String(parseError) } },
+            { error: "Assignment data is corrupted" },
             { status: 500, headers: corsHeaders }
           );
         }
@@ -476,7 +476,7 @@ export default {
         if (!stored || !stored.payload || !stored.signature) {
           console.error("Invalid stored assignment structure:", { hasPayload: !!stored?.payload, hasSignature: !!stored?.signature });
           return Response.json(
-            { error: "Assignment data is incomplete or corrupted", debug: { hasPayload: !!stored?.payload, hasSignature: !!stored?.signature } },
+            { error: "Assignment data is incomplete or corrupted" },
             { status: 500, headers: corsHeaders }
           );
         }
@@ -498,7 +498,7 @@ export default {
         } catch (verifyError) {
           console.error("Signature verification error:", verifyError);
           return Response.json(
-            { error: "This assignment link is invalid or has been modified. Please request a new link from your teacher.", tampered: true, debug: { verifyError: String(verifyError) } },
+            { error: "This assignment link is invalid or has been modified. Please request a new link from your teacher.", tampered: true },
             { status: 403, headers: corsHeaders }
           );
         }
