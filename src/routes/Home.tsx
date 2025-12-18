@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { PenLine, Plus, Copy, Check, ChevronRight, ChevronLeft, CheckCircle2, Upload, Play, RotateCcw, ExternalLink, AlertTriangle, FileCheck } from "lucide-react";
+import { useState, useCallback, useRef } from "react";
+import { PenLine, Plus, Copy, Check, ChevronRight, CheckCircle2, Upload, Play, RotateCcw, ExternalLink, AlertTriangle, FileCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,12 +30,12 @@ export default function Home() {
   // ========== CREATE ASSIGNMENT STATE ==========
   const [wizardStep, setWizardStep] = useState(1);
   const [lineCount, setLineCount] = useState(5);
+  const [expectedText, setExpectedText] = useState("");
   const [expectedStyle, setExpectedStyle] = useState<HandwritingStyle>("print");
   const [paperType, setPaperType] = useState<PaperType>("ruled");
   const [numberingRequired, setNumberingRequired] = useState(false);
   const [numberingStartAt, setNumberingStartAt] = useState(1);
   const [numberingFormat, setNumberingFormat] = useState<NumberingFormat>("dot");
-  const [expectedLines, setExpectedLines] = useState<string[]>([]);
   const [assignmentId, setAssignmentId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -43,7 +43,7 @@ export default function Home() {
 
   // ========== QUICK GRADE STATE ==========
   const [gradeLineCount, setGradeLineCount] = useState(5);
-  const [gradeExpectedLines, setGradeExpectedLines] = useState<string[]>([]);
+  const [gradeExpectedText, setGradeExpectedText] = useState("");
   const [gradeFile, setGradeFile] = useState<File | null>(null);
   const [gradeProgress, setGradeProgress] = useState<PipelineProgress | null>(null);
   const [gradeResult, setGradeResult] = useState<PipelineResult | null>(null);
@@ -57,23 +57,12 @@ export default function Home() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // ========== CREATE ASSIGNMENT LOGIC ==========
-  useEffect(() => {
-    if (lineCount > 0 && expectedLines.length !== lineCount) {
-      setExpectedLines(Array(lineCount).fill(""));
-    }
-  }, [lineCount, expectedLines.length]);
-
-  useEffect(() => {
-    if (gradeLineCount > 0 && gradeExpectedLines.length !== gradeLineCount) {
-      setGradeExpectedLines(Array(gradeLineCount).fill(""));
-    }
-  }, [gradeLineCount, gradeExpectedLines.length]);
-
   const handleGenerateAssignment = async () => {
     setIsGenerating(true);
     setCreateError(null);
 
     try {
+      const lines = Array(lineCount).fill(expectedText);
       const response = await api.createAssignment({
         requiredLineCount: lineCount,
         expectedStyle,
@@ -81,11 +70,11 @@ export default function Home() {
         numbering: numberingRequired
           ? { required: true, startAt: numberingStartAt, format: numberingFormat }
           : { required: false },
-        expectedContent: { mode: "perLine", lines: expectedLines },
+        expectedContent: { mode: "perLine", lines },
       });
 
       setAssignmentId(response.assignmentId);
-      setWizardStep(3);
+      setWizardStep(2);
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : "Failed to create assignment");
     } finally {
@@ -104,12 +93,12 @@ export default function Home() {
   const resetCreateWizard = () => {
     setWizardStep(1);
     setLineCount(5);
+    setExpectedText("");
     setExpectedStyle("print");
     setPaperType("ruled");
     setNumberingRequired(false);
     setNumberingStartAt(1);
     setNumberingFormat("dot");
-    setExpectedLines([]);
     setAssignmentId(null);
     setCreateError(null);
   };
@@ -131,7 +120,7 @@ export default function Home() {
   }, []);
 
   const handleRunGrade = useCallback(async () => {
-    if (!gradeFile || gradeExpectedLines.some((l) => !l.trim())) return;
+    if (!gradeFile || !gradeExpectedText.trim()) return;
 
     setGradeState("processing");
     setGradeProgress(null);
@@ -140,6 +129,7 @@ export default function Home() {
 
     abortControllerRef.current = new AbortController();
 
+    const lines = Array(gradeLineCount).fill(gradeExpectedText);
     const localPayload: AssignmentPayload = {
       version: 1,
       assignmentId: `local-${Date.now()}`,
@@ -148,7 +138,7 @@ export default function Home() {
       expectedStyle: "print",
       paperType: "either",
       numbering: { required: false },
-      expectedContent: { mode: "perLine", lines: [...gradeExpectedLines] },
+      expectedContent: { mode: "perLine", lines },
       precisionMode: "max",
     };
 
@@ -170,7 +160,7 @@ export default function Home() {
         setGradeState("input");
       }
     }
-  }, [gradeFile, gradeExpectedLines, gradeLineCount]);
+  }, [gradeFile, gradeExpectedText, gradeLineCount]);
 
   const handleCancelGrade = useCallback(() => {
     abortControllerRef.current?.abort();
@@ -240,6 +230,8 @@ export default function Home() {
     setGradeState("input");
     setSelectedFindingId(null);
     setGradedPayload(null);
+    setGradeExpectedText("");
+    setGradeLineCount(5);
   };
 
   const handleGradeModalClose = (open: boolean) => {
@@ -288,27 +280,35 @@ export default function Home() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>
-              {wizardStep === 1 && "Assignment Rules"}
-              {wizardStep === 2 && "Expected Content"}
-              {wizardStep === 3 && "Share Link"}
+              {wizardStep === 1 && "Create Assignment"}
+              {wizardStep === 2 && "Share Link"}
             </DialogTitle>
             <DialogDescription>
-              {wizardStep === 1 && "Define requirements for the assignment"}
-              {wizardStep === 2 && "Enter expected text per line"}
-              {wizardStep === 3 && "Share this link with students"}
+              {wizardStep === 1 && "Enter the text and how many times it should be written"}
+              {wizardStep === 2 && "Share this link with students"}
             </DialogDescription>
           </DialogHeader>
 
           {wizardStep === 1 && (
             <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Expected Text</Label>
+                <Textarea
+                  value={expectedText}
+                  onChange={(e) => setExpectedText(e.target.value)}
+                  placeholder="e.g., I will not talk in class"
+                  className="min-h-[80px]"
+                />
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="lineCount">Lines</Label>
+                  <Label htmlFor="lineCount">Repeat Times</Label>
                   <Input
                     id="lineCount"
                     type="number"
                     min={1}
-                    max={50}
+                    max={500}
                     value={lineCount}
                     onChange={(e) => setLineCount(Math.max(1, parseInt(e.target.value) || 1))}
                   />
@@ -383,59 +383,25 @@ export default function Home() {
                 </div>
               )}
 
-              <div className="flex justify-end pt-2">
-                <Button onClick={() => setWizardStep(2)}>
-                  Next
-                  <ChevronRight className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {wizardStep === 2 && (
-            <div className="space-y-4">
-              <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
-                {expectedLines.map((line, index) => (
-                  <div key={index} className="flex gap-2 items-start">
-                    <span className="text-sm text-muted-foreground w-6 pt-2 text-right">
-                      {index + 1}.
-                    </span>
-                    <Textarea
-                      value={line}
-                      onChange={(e) => {
-                        const newLines = [...expectedLines];
-                        newLines[index] = e.target.value;
-                        setExpectedLines(newLines);
-                      }}
-                      placeholder={`Line ${index + 1}`}
-                      className="min-h-[50px]"
-                    />
-                  </div>
-                ))}
-              </div>
-
               {createError && (
                 <Alert variant="destructive">
                   <AlertDescription>{createError}</AlertDescription>
                 </Alert>
               )}
 
-              <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => setWizardStep(1)}>
-                  <ChevronLeft className="mr-2 h-4 w-4" />
-                  Back
-                </Button>
+              <div className="flex justify-end pt-2">
                 <Button
                   onClick={handleGenerateAssignment}
-                  disabled={isGenerating || expectedLines.some((l) => !l.trim())}
+                  disabled={isGenerating || !expectedText.trim()}
                 >
                   {isGenerating ? "Creating..." : "Create"}
+                  <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>
               </div>
             </div>
           )}
 
-          {wizardStep === 3 && assignmentId && (
+          {wizardStep === 2 && assignmentId && (
             <div className="space-y-4">
               <Alert variant="default" className="bg-green-500/10 border-green-500/50">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -484,34 +450,24 @@ export default function Home() {
           {gradeState === "input" && (
             <div className="space-y-4">
               <div className="space-y-2">
+                <Label>Expected Text</Label>
+                <Textarea
+                  value={gradeExpectedText}
+                  onChange={(e) => setGradeExpectedText(e.target.value)}
+                  placeholder="e.g., I will not talk in class"
+                  className="min-h-[80px]"
+                />
+              </div>
+
+              <div className="space-y-2">
                 <Label>Number of Lines</Label>
                 <Input
                   type="number"
                   min={1}
-                  max={50}
+                  max={500}
                   value={gradeLineCount}
                   onChange={(e) => setGradeLineCount(Math.max(1, parseInt(e.target.value) || 1))}
                 />
-              </div>
-
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
-                {gradeExpectedLines.map((line, index) => (
-                  <div key={index} className="flex gap-2 items-start">
-                    <span className="text-sm text-muted-foreground w-6 pt-2 text-right">
-                      {index + 1}.
-                    </span>
-                    <Textarea
-                      value={line}
-                      onChange={(e) => {
-                        const newLines = [...gradeExpectedLines];
-                        newLines[index] = e.target.value;
-                        setGradeExpectedLines(newLines);
-                      }}
-                      placeholder={`Line ${index + 1}`}
-                      className="min-h-[50px]"
-                    />
-                  </div>
-                ))}
               </div>
 
               <UploadDropzone onFileSelect={handleFileSelect} />
@@ -532,7 +488,7 @@ export default function Home() {
               <div className="flex justify-end">
                 <Button
                   onClick={handleRunGrade}
-                  disabled={!gradeFile || gradeExpectedLines.some((l) => !l.trim())}
+                  disabled={!gradeFile || !gradeExpectedText.trim()}
                 >
                   <Play className="mr-2 h-4 w-4" />
                   Grade
