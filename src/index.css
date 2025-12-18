@@ -96,6 +96,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+.font-brand {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-weight: 400;
+}
+
 /* Container utility */
 .container {
   margin-inline: auto;

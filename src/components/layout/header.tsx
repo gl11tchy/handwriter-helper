@@ -17,7 +17,7 @@ export function Header() {
       <div className="container flex h-14 items-center">
         <Link to="/" className="flex items-center gap-2 mr-6">
           <PenLine className="h-6 w-6 text-primary" />
-          <span className="font-semibold text-lg hidden sm:inline">Writing Lines</span>
+          <span className="text-xl hidden sm:inline font-brand">writinglines.com</span>
         </Link>
 
         <nav className="flex items-center gap-1 flex-1">
