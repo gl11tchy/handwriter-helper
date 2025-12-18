@@ -255,12 +255,8 @@ export default function Home() {
       <section className="py-20 md:py-32">
         <div className="container">
           <div className="flex flex-col items-center text-center space-y-6 max-w-3xl mx-auto">
-            <div className="h-24 overflow-hidden">
+            <div className="h-8 overflow-hidden">
               <div className="animate-lines">
-                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">Assign a task. Grade handwriting. Generate a report.</p>
-                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">Assign a task. Grade handwriting. Generate a report.</p>
-                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">Assign a task. Grade handwriting. Generate a report.</p>
-                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">Assign a task. Grade handwriting. Generate a report.</p>
                 <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">Assign a task. Grade handwriting. Generate a report.</p>
                 <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">Assign a task. Grade handwriting. Generate a report.</p>
               </div>
