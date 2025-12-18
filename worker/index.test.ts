@@ -44,10 +44,25 @@ function createMockR2(): R2Bucket {
   } as unknown as R2Bucket;
 }
 
+// Mock ASSETS Fetcher for SPA routing
+function createMockAssets(): Fetcher {
+  return {
+    fetch: vi.fn(async () => {
+      // Return a mock HTML response for SPA routes
+      return new Response("<!DOCTYPE html><html><body>SPA</body></html>", {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      });
+    }),
+    connect: vi.fn(),
+  } as unknown as Fetcher;
+}
+
 // Create mock environment
 function createMockEnv(overrides: Partial<Env> = {}): Env {
   return {
     STORAGE: createMockR2(),
+    ASSETS: createMockAssets(),
     APP_URL: "https://example.com",
     ENVIRONMENT: "test",
     GOOGLE_CLOUD_API_KEY: "test-api-key",
@@ -414,7 +429,7 @@ describe("Worker", () => {
   });
 
   describe("404 handling", () => {
-    it("returns 404 for unknown routes", async () => {
+    it("returns 404 for unknown API routes", async () => {
       const request = createRequest("/api/unknown");
       const response = await worker.fetch(request, env);
       const data = (await response.json()) as ErrorResponse;
@@ -422,12 +437,31 @@ describe("Worker", () => {
       expect(response.status).toBe(404);
       expect(data.error).toBe("Not found");
     });
+  });
 
-    it("returns 404 for root path", async () => {
+  describe("SPA routing", () => {
+    it("serves frontend for root path via ASSETS", async () => {
       const request = createRequest("/");
       const response = await worker.fetch(request, env);
 
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(200);
+      expect(env.ASSETS.fetch).toHaveBeenCalled();
+    });
+
+    it("serves frontend for /a/:id routes via ASSETS", async () => {
+      const request = createRequest("/a/test-assignment-123");
+      const response = await worker.fetch(request, env);
+
+      expect(response.status).toBe(200);
+      expect(env.ASSETS.fetch).toHaveBeenCalled();
+    });
+
+    it("serves frontend for /r/:id routes via ASSETS", async () => {
+      const request = createRequest("/r/test-report-456");
+      const response = await worker.fetch(request, env);
+
+      expect(response.status).toBe(200);
+      expect(env.ASSETS.fetch).toHaveBeenCalled();
     });
   });
 });
