@@ -259,12 +259,9 @@ export default function Home() {
               <PenLine className="h-12 w-12 text-primary" />
             </div>
             <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
-              Handwriting Assignment Grader
+              Writing Lines
             </h1>
-            <p className="text-lg text-muted-foreground max-w-2xl">
-              Create an assignment or grade an existing one. Our handwriting detection software analyzes the work and generates a detailed report.
-            </p>
-            <div className="flex gap-4 pt-4">
+            <div className="flex gap-4">
               <Button size="lg" onClick={() => setCreateModalOpen(true)}>
                 <Plus className="mr-2 h-5 w-5" />
                 Create Assignment
