@@ -4,7 +4,6 @@ import { Footer } from "@/components/layout/footer";
 
 // Routes
 import Home from "@/routes/Home";
-import Create from "@/routes/Create";
 import AssignmentRunner from "@/routes/AssignmentRunner";
 import ReportViewer from "@/routes/ReportViewer";
 import About from "@/routes/About";
@@ -27,14 +26,6 @@ function AppRoutes() {
         element={
           <AppLayout>
             <Home />
-          </AppLayout>
-        }
-      />
-      <Route
-        path="/create"
-        element={
-          <AppLayout>
-            <Create />
           </AppLayout>
         }
       />

@@ -1,12 +1,11 @@
 import { Link, useLocation } from "react-router-dom";
-import { PenLine, Home, Plus, Info } from "lucide-react";
+import { PenLine, Home, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { to: "/", label: "Home", icon: Home },
-  { to: "/create", label: "Create", icon: Plus },
   { to: "/about", label: "About", icon: Info },
 ];
 
