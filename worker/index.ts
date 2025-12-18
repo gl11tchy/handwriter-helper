@@ -319,6 +319,10 @@ export default {
 
       // Only handle /api/* routes - serve static assets for frontend routes
       if (!url.pathname.startsWith("/api/")) {
+        if (!env.ASSETS) {
+          console.error("ASSETS binding not configured");
+          return new Response("Static assets not configured", { status: 503 });
+        }
         return env.ASSETS.fetch(request);
       }
       // Health check
@@ -425,9 +429,13 @@ export default {
       if (url.pathname.startsWith("/api/assignment/") && request.method === "GET") {
         const assignmentId = url.pathname.replace("/api/assignment/", "");
 
+        // Log for debugging (visible in Cloudflare logs only)
+        console.log("GET assignment request:", { assignmentId, pathname: url.pathname });
+
         if (!/^[a-z0-9-]+$/i.test(assignmentId)) {
+          console.log("Invalid assignment ID format:", assignmentId);
           return Response.json(
-            { error: "Invalid assignment ID" },
+            { error: "Invalid assignment ID format" },
             { status: 400, headers: corsHeaders }
           );
         }
@@ -435,6 +443,7 @@ export default {
         let object;
         try {
           object = await env.STORAGE.get(`assignments/${assignmentId}.json`);
+          console.log("Storage.get result:", { found: !!object, assignmentId });
         } catch (storageError) {
           console.error("Storage error fetching assignment:", storageError);
           return Response.json(
@@ -444,6 +453,7 @@ export default {
         }
 
         if (!object) {
+          console.log("Assignment not found in storage:", assignmentId);
           return Response.json(
             { error: "Assignment not found" },
             { status: 404, headers: corsHeaders }
@@ -453,6 +463,7 @@ export default {
         let stored: StoredAssignment;
         try {
           stored = await object.json() as StoredAssignment;
+          console.log("Parsed stored assignment:", { hasPayload: !!stored?.payload, hasSignature: !!stored?.signature });
         } catch (parseError) {
           console.error("JSON parse error for assignment:", parseError);
           return Response.json(
@@ -472,6 +483,7 @@ export default {
 
         // Verify signature
         if (!env.SIGNING_SECRET) {
+          console.error("SIGNING_SECRET not configured");
           return Response.json(
             { error: "Signing service not configured" },
             { status: 503, headers: corsHeaders }
@@ -482,6 +494,7 @@ export default {
         try {
           const payloadJson = JSON.stringify(stored.payload);
           valid = await verifySignature(payloadJson, stored.signature, env.SIGNING_SECRET);
+          console.log("Signature verification result:", { valid });
         } catch (verifyError) {
           console.error("Signature verification error:", verifyError);
           return Response.json(
@@ -491,12 +504,14 @@ export default {
         }
 
         if (!valid) {
+          console.log("Signature verification failed - tampered data");
           return Response.json(
             { error: "This assignment link is invalid or has been modified. Please request a new link from your teacher.", tampered: true },
             { status: 403, headers: corsHeaders }
           );
         }
 
+        console.log("Assignment retrieved successfully:", assignmentId);
         return Response.json(
           { payload: stored.payload, verified: true },
           { headers: corsHeaders }

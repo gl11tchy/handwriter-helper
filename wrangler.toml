@@ -4,6 +4,7 @@ compatibility_flags = ["nodejs_compat"]
 main = "./worker/index.ts"
 
 [assets]
+directory = "./dist"
 not_found_handling = "single-page-application"
 
 [[r2_buckets]]
@@ -14,5 +15,13 @@ bucket_name = "handwriter-helper-storage"
 ENVIRONMENT = "production"
 APP_URL = "https://writinglines.com"
 
-# GOOGLE_CLOUD_API_KEY must be set as a secret:
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+# Secrets must be set via wrangler:
 # wrangler secret put GOOGLE_CLOUD_API_KEY
+# wrangler secret put SIGNING_SECRET
