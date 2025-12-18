@@ -421,7 +421,16 @@ export default {
           );
         }
 
-        const object = await env.STORAGE.get(`assignments/${assignmentId}.json`);
+        let object;
+        try {
+          object = await env.STORAGE.get(`assignments/${assignmentId}.json`);
+        } catch (storageError) {
+          console.error("Storage error fetching assignment:", storageError);
+          return Response.json(
+            { error: "Failed to fetch assignment from storage" },
+            { status: 500, headers: corsHeaders }
+          );
+        }
 
         if (!object) {
           return Response.json(
@@ -430,7 +439,25 @@ export default {
           );
         }
 
-        const stored = await object.json() as StoredAssignment;
+        let stored: StoredAssignment;
+        try {
+          stored = await object.json() as StoredAssignment;
+        } catch (parseError) {
+          console.error("JSON parse error for assignment:", parseError);
+          return Response.json(
+            { error: "Assignment data is corrupted" },
+            { status: 500, headers: corsHeaders }
+          );
+        }
+
+        // Validate stored data structure
+        if (!stored || !stored.payload || !stored.signature) {
+          console.error("Invalid stored assignment structure:", { hasPayload: !!stored?.payload, hasSignature: !!stored?.signature });
+          return Response.json(
+            { error: "Assignment data is incomplete or corrupted" },
+            { status: 500, headers: corsHeaders }
+          );
+        }
 
         // Verify signature
         if (!env.SIGNING_SECRET) {
@@ -440,8 +467,17 @@ export default {
           );
         }
 
-        const payloadJson = JSON.stringify(stored.payload);
-        const valid = await verifySignature(payloadJson, stored.signature, env.SIGNING_SECRET);
+        let valid: boolean;
+        try {
+          const payloadJson = JSON.stringify(stored.payload);
+          valid = await verifySignature(payloadJson, stored.signature, env.SIGNING_SECRET);
+        } catch (verifyError) {
+          console.error("Signature verification error:", verifyError);
+          return Response.json(
+            { error: "This assignment link is invalid or has been modified. Please request a new link from your teacher.", tampered: true },
+            { status: 403, headers: corsHeaders }
+          );
+        }
 
         if (!valid) {
           return Response.json(
