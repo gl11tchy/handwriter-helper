@@ -85,6 +85,21 @@ function base64UrlToArrayBuffer(base64url: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+// HTML escape for safe email content
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+// Validate base64url format (used for encryption keys)
+function isValidBase64Url(str: string): boolean {
+  return /^[A-Za-z0-9_-]+$/.test(str);
+}
+
 // Send email via Resend API
 async function sendResultsEmail(
   to: string,
@@ -93,6 +108,7 @@ async function sendResultsEmail(
   apiKey: string
 ): Promise<boolean> {
   try {
+    const escapedText = escapeHtml(assignmentText);
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -106,7 +122,7 @@ async function sendResultsEmail(
         html: `
           <h2>Assignment Results Ready</h2>
           <p>A student has submitted their handwriting assignment.</p>
-          <p><strong>Assignment:</strong> "${assignmentText}"</p>
+          <p><strong>Assignment:</strong> "${escapedText}"</p>
           <p><a href="${reportUrl}" style="display: inline-block; padding: 12px 24px; background-color: #d4af37; color: #000; text-decoration: none; border-radius: 6px; font-weight: bold;">View Results</a></p>
           <p style="color: #666; font-size: 14px; margin-top: 20px;">This link contains the encryption key needed to view the report. Keep it safe.</p>
         `,
@@ -607,25 +623,30 @@ export default {
         // Send email notification if assignment has notifyEmail configured
         let emailSent = false;
         if (body.assignmentId && body.encryptionKey && env.RESEND_API_KEY) {
-          try {
-            const assignmentObject = await env.STORAGE.get(`assignments/${body.assignmentId}.json`);
-            if (assignmentObject) {
-              const stored = await assignmentObject.json() as StoredAssignment;
-              if (stored?.payload?.notifyEmail) {
-                const assignmentText = stored.payload.expectedContent.lines[0] || "Handwriting assignment";
-                // Build the full report URL with the encryption key in the fragment
-                const reportUrl = `${env.APP_URL}/report/${reportId}#${body.encryptionKey}`;
-                emailSent = await sendResultsEmail(
-                  stored.payload.notifyEmail,
-                  reportUrl,
-                  assignmentText,
-                  env.RESEND_API_KEY
-                );
+          // Validate encryptionKey is valid base64url to prevent injection
+          if (!isValidBase64Url(body.encryptionKey)) {
+            console.error("Invalid encryptionKey format, skipping email");
+          } else {
+            try {
+              const assignmentObject = await env.STORAGE.get(`assignments/${body.assignmentId}.json`);
+              if (assignmentObject) {
+                const stored = await assignmentObject.json() as StoredAssignment;
+                if (stored?.payload?.notifyEmail) {
+                  const assignmentText = stored.payload.expectedContent.lines[0] || "Handwriting assignment";
+                  // Build the full report URL with the encryption key in the fragment
+                  const reportUrl = `${env.APP_URL}/report/${reportId}#${body.encryptionKey}`;
+                  emailSent = await sendResultsEmail(
+                    stored.payload.notifyEmail,
+                    reportUrl,
+                    assignmentText,
+                    env.RESEND_API_KEY
+                  );
+                }
               }
+            } catch (emailError) {
+              console.error("Error sending notification email:", emailError);
+              // Don't fail the request if email fails
             }
-          } catch (emailError) {
-            console.error("Error sending notification email:", emailError);
-            // Don't fail the request if email fails
           }
         }
 
