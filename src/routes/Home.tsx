@@ -271,11 +271,11 @@ export default function Home() {
               </div>
             </div>
             <div className="flex gap-4">
-              <Button size="lg" className="hover:brightness-110" onClick={() => setCreateModalOpen(true)}>
+              <Button size="lg" className="transition-all duration-200 hover:scale-[1.02] hover:shadow-[0_0_20px_rgba(212,175,55,0.3)]" onClick={() => setCreateModalOpen(true)}>
                 <Plus className="mr-2 h-5 w-5" />
                 Create Assignment
               </Button>
-              <Button size="lg" variant="outline" className="border-foreground/60 text-foreground hover:bg-white/25 hover:border-foreground/80" onClick={() => setGradeModalOpen(true)}>
+              <Button size="lg" variant="outline" className="border-foreground/60 text-foreground transition-all duration-200 hover:scale-[1.02] hover:border-primary/70 hover:bg-primary/10 hover:shadow-[0_0_15px_rgba(212,175,55,0.15)]" onClick={() => setGradeModalOpen(true)}>
                 <FileCheck className="mr-2 h-5 w-5" />
                 Upload & Grade
               </Button>
