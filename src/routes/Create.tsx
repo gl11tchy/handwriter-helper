@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
 import {
   Plus,
   Copy,
@@ -7,7 +6,6 @@ import {
   ChevronRight,
   ChevronLeft,
   CheckCircle2,
-  PenLine,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,15 +87,7 @@ export default function Create() {
   return (
     <div className="container py-8">
       <div className="max-w-2xl mx-auto space-y-6">
-        <div className="text-center mb-8">
-          <div className="mx-auto mb-4 p-4 bg-primary/10 rounded-full w-fit">
-            <PenLine className="h-8 w-8 text-primary" />
-          </div>
-          <h1 className="text-2xl font-bold">Create Assignment</h1>
-          <p className="text-muted-foreground">
-            Define what students should write and share the link
-          </p>
-        </div>
+        <h1 className="text-2xl font-bold mb-6">Create Assignment</h1>
 
         <Card>
           <CardHeader>
@@ -301,13 +291,10 @@ export default function Create() {
                   </p>
                 </div>
 
-                <div className="flex justify-between pt-4">
+                <div className="flex justify-start pt-4">
                   <Button variant="outline" onClick={resetWizard}>
                     <Plus className="mr-2 h-4 w-4" />
                     Create Another
-                  </Button>
-                  <Button variant="outline" asChild>
-                    <Link to="/">Back to Home</Link>
                   </Button>
                 </div>
               </div>

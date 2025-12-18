@@ -1,4 +1,3 @@
-import { Link } from "react-router-dom";
 import {
   Shield,
   Lock,
@@ -10,7 +9,6 @@ import {
   CheckCircle2,
   HelpCircle,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 
@@ -22,8 +20,7 @@ export default function About() {
         <div className="text-center space-y-4">
           <h1 className="text-3xl font-bold">About Handwriter Helper</h1>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-            A privacy-focused, client-side handwriting assignment grader with tamper-evident
-            assignments and encrypted reports.
+            How the tool works and what data is stored.
           </p>
         </div>
 
@@ -243,18 +240,6 @@ export default function About() {
           </CardContent>
         </Card>
 
-        {/* CTA */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
-          <Button asChild>
-            <Link to="/keyholder">
-              <Key className="mr-2 h-5 w-5" />
-              Create Assignment
-            </Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link to="/">Return Home</Link>
-          </Button>
-        </div>
       </div>
     </div>
   );

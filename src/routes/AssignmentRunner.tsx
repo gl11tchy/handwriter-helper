@@ -427,13 +427,7 @@ export default function AssignmentRunner() {
             ) : (
               <Card>
                 <CardContent className="py-6">
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-                    <div>
-                      <p className="font-medium">Ready to share your results?</p>
-                      <p className="text-sm text-muted-foreground">
-                        Generate a link to share your results
-                      </p>
-                    </div>
+                  <div className="flex justify-end">
                     <Button onClick={handleGenerateReportLink}>
                       <Upload className="mr-2 h-4 w-4" />
                       Generate Report Link
