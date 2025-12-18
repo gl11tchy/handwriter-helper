@@ -380,7 +380,12 @@ export default {
         const body = await request.json() as CreateAssignmentRequest;
 
         // Validate required fields
-        if (!body.requiredLineCount || !body.expectedStyle || !body.expectedContent?.lines) {
+        if (
+          !body.requiredLineCount ||
+          !body.expectedStyle ||
+          !body.expectedContent?.lines ||
+          body.expectedContent.lines.length === 0
+        ) {
           return Response.json(
             { error: "Missing required fields" },
             { status: 400, headers: corsHeaders }

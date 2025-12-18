@@ -431,19 +431,21 @@ describe("Worker", () => {
       expect(getData.verified).toBe(true);
     });
 
-    it("handles empty lines array in expectedContent", async () => {
+    it("rejects assignment with empty lines array", async () => {
       const request = createRequest("/api/assignment", {
         method: "POST",
         body: JSON.stringify({
-          requiredLineCount: 0,
+          requiredLineCount: 5,
           expectedStyle: "print",
           expectedContent: { mode: "perLine", lines: [] },
         }),
       });
 
       const response = await worker.fetch(request, env);
-      // Empty lines should still be rejected as missing required fields
+      const data = (await response.json()) as ErrorResponse;
+
       expect(response.status).toBe(400);
+      expect(data.error).toBe("Missing required fields");
     });
   });
 
