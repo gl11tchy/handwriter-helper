@@ -255,6 +255,9 @@ export default function Home() {
       <section className="py-20 md:py-32">
         <div className="container">
           <div className="flex flex-col items-center text-center space-y-6 max-w-3xl mx-auto">
+            <p className="text-2xl md:text-3xl font-brand text-muted-foreground">
+              Assign a task. Grade handwriting. Generate a completion report.
+            </p>
             <div className="flex gap-4">
               <Button size="lg" onClick={() => setCreateModalOpen(true)}>
                 <Plus className="mr-2 h-5 w-5" />
