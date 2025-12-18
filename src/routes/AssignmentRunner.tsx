@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  Upload,
   Play,
   Copy,
   Check,
@@ -99,12 +98,13 @@ export default function AssignmentRunner() {
   }, []);
 
   const handleRunPipeline = useCallback(async () => {
-    if (!selectedFile || !payload) return;
+    if (!selectedFile || !payload || !assignmentId) return;
 
     setState("processing");
     setProgress(null);
     setResult(null);
     setError(null);
+    setReportLink(null);
 
     abortControllerRef.current = new AbortController();
 
@@ -115,31 +115,12 @@ export default function AssignmentRunner() {
       });
 
       setResult(pipelineResult);
-      setState("results");
-    } catch (e) {
-      if (e instanceof Error && e.message === "Pipeline cancelled") {
-        setState("uploading");
-      } else {
-        setError(e instanceof Error ? e.message : "Processing failed");
-        setState("uploading");
-      }
-    }
-  }, [selectedFile, payload]);
 
-  const handleCancel = useCallback(() => {
-    abortControllerRef.current?.abort();
-  }, []);
+      // Auto-generate report link
+      setState("generating_link");
 
-  const handleGenerateReportLink = useCallback(async () => {
-    if (!result || !payload || !selectedFile || !assignmentId) return;
-
-    setState("generating_link");
-    setError(null);
-
-    try {
-      // Create report object (simplified - no token needed)
       const report: Report = {
-        reportId: "", // Will be assigned by server
+        reportId: "",
         createdAt: new Date().toISOString(),
         assignmentId,
         assignmentPayload: payload,
@@ -148,23 +129,19 @@ export default function AssignmentRunner() {
           type: selectedFile.type,
           size: selectedFile.size,
         },
-        pages: result.pages,
-        extractedTextPerLine: result.extractedTextPerLine,
-        detectedLineCount: result.detectedLineCount,
-        quality: result.quality,
-        findings: result.findings,
-        score: result.score,
+        pages: pipelineResult.pages,
+        extractedTextPerLine: pipelineResult.extractedTextPerLine,
+        detectedLineCount: pipelineResult.detectedLineCount,
+        quality: pipelineResult.quality,
+        findings: pipelineResult.findings,
+        score: pipelineResult.score,
       };
 
-      // Generate encryption key
       const encKey = await generateEncryptionKey();
       const keyB64 = await exportKeyToBase64(encKey);
-
-      // Encrypt report
       const reportJson = JSON.stringify(report);
       const { ciphertextB64, nonceB64 } = await encryptData(reportJson, encKey);
 
-      // Upload to server
       const { reportId } = await api.uploadReport({
         ciphertextB64,
         nonceB64,
@@ -174,15 +151,22 @@ export default function AssignmentRunner() {
         },
       });
 
-      // Build report URL with key in fragment
       const url = buildReportUrl(reportId, keyB64);
       setReportLink(url);
       setState("results");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to generate report link");
-      setState("results");
+      if (e instanceof Error && e.message === "Pipeline cancelled") {
+        setState("uploading");
+      } else {
+        setError(e instanceof Error ? e.message : "Processing failed");
+        setState("results");
+      }
     }
-  }, [result, payload, selectedFile, assignmentId]);
+  }, [selectedFile, payload, assignmentId]);
+
+  const handleCancel = useCallback(() => {
+    abortControllerRef.current?.abort();
+  }, []);
 
   const copyReportLink = useCallback(async () => {
     if (!reportLink) return;
@@ -387,12 +371,12 @@ export default function AssignmentRunner() {
             <ScoreCard score={result.score} quality={result.quality} />
 
             {/* Report Link */}
-            {reportLink ? (
+            {reportLink && (
               <Card>
                 <CardHeader>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="h-5 w-5 text-success" />
-                    <CardTitle>Report Link Generated</CardTitle>
+                    <CardTitle>Report Link Ready</CardTitle>
                   </div>
                   <CardDescription>
                     Share this link with your teacher to view your results
@@ -403,7 +387,7 @@ export default function AssignmentRunner() {
                     <input
                       readOnly
                       value={reportLink}
-                      className="flex-1 px-3 py-2 text-sm bg-muted rounded-md font-mono"
+                      className="flex-1 px-3 py-2 text-sm bg-muted rounded-md font-mono truncate"
                     />
                     <Button onClick={copyReportLink}>
                       {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
@@ -414,33 +398,15 @@ export default function AssignmentRunner() {
                       </a>
                     </Button>
                   </div>
-                  <Alert>
-                    <AlertTriangle className="h-4 w-4" />
-                    <AlertTitle>Important</AlertTitle>
-                    <AlertDescription>
-                      The decryption key is in the URL fragment and is not sent to the server. Only
-                      people with this exact link can view the report.
-                    </AlertDescription>
-                  </Alert>
                 </CardContent>
               </Card>
-            ) : (
-              <Card>
-                <CardContent className="py-6">
-                  <div className="flex justify-end">
-                    <Button onClick={handleGenerateReportLink}>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Generate Report Link
-                    </Button>
-                  </div>
-                  {error && (
-                    <Alert variant="destructive" className="mt-4">
-                      <AlertTriangle className="h-4 w-4" />
-                      <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                  )}
-                </CardContent>
-              </Card>
+            )}
+
+            {error && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
             )}
 
             {/* Detailed Results */}
