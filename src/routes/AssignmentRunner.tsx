@@ -322,7 +322,7 @@ export default function AssignmentRunner() {
                     {payload.expectedContent.lines.every(line => line === payload.expectedContent.lines[0]) ? (
                       <>
                         <p className="text-sm text-muted-foreground mb-2">
-                          Write this line {payload.requiredLineCount} {payload.requiredLineCount === 1 ? "time" : "times"}
+                          Write this line {payload.expectedContent.lines.length} {payload.expectedContent.lines.length === 1 ? "time" : "times"}
                         </p>
                         <p className="font-medium text-base p-3 bg-muted rounded-md">
                           "{payload.expectedContent.lines[0]}"
