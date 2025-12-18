@@ -293,26 +293,57 @@ export default function AssignmentRunner() {
           </CardHeader>
           <CardContent>
             {payload && (
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Required Lines</p>
-                  <p className="font-medium">{payload.requiredLineCount}</p>
+              <>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Required Lines</p>
+                    <p className="font-medium">{payload.requiredLineCount}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Writing Style</p>
+                    <p className="font-medium capitalize">{payload.expectedStyle}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Paper Type</p>
+                    <p className="font-medium capitalize">{payload.paperType}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Numbering</p>
+                    <p className="font-medium">
+                      {payload.numbering.required ? "Required" : "Not required"}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Writing Style</p>
-                  <p className="font-medium capitalize">{payload.expectedStyle}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Paper Type</p>
-                  <p className="font-medium capitalize">{payload.paperType}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Numbering</p>
-                  <p className="font-medium">
-                    {payload.numbering.required ? "Required" : "Not required"}
-                  </p>
-                </div>
-              </div>
+
+                {/* Expected Content */}
+                {payload.expectedContent?.lines && payload.expectedContent.lines.length > 0 && (
+                  <div className="mt-6 pt-4 border-t">
+                    {/* Check if all lines are the same */}
+                    {payload.expectedContent.lines.every(line => line === payload.expectedContent.lines[0]) ? (
+                      <>
+                        <p className="text-sm text-muted-foreground mb-2">
+                          Write this line {payload.expectedContent.lines.length} {payload.expectedContent.lines.length === 1 ? "time" : "times"}
+                        </p>
+                        <p className="font-medium text-base p-3 bg-muted rounded-md">
+                          "{payload.expectedContent.lines[0]}"
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-muted-foreground mb-2">Lines to Write</p>
+                        <div className="space-y-1 p-3 bg-muted rounded-md max-h-48 overflow-y-auto">
+                          {payload.expectedContent.lines.map((line, idx) => (
+                            <p key={idx} className="font-medium text-sm">
+                              <span className="text-muted-foreground mr-2">{idx + 1}.</span>
+                              "{line}"
+                            </p>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
             )}
 
           </CardContent>
