@@ -100,6 +100,26 @@ body {
   font-family: "Caveat", cursive;
 }
 
+/* Vertical carousel animation */
+@keyframes carousel {
+  0%, 20% {
+    transform: translateY(0);
+  }
+  33%, 53% {
+    transform: translateY(-25%);
+  }
+  66%, 86% {
+    transform: translateY(-50%);
+  }
+  100% {
+    transform: translateY(-75%);
+  }
+}
+
+.animate-carousel {
+  animation: carousel 6s ease-in-out infinite;
+}
+
 /* Container utility */
 .container {
   margin-inline: auto;
