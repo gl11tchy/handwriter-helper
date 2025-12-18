@@ -428,11 +428,15 @@ export default {
         const stored = await object.json() as StoredAssignment;
 
         // Verify signature
-        let valid = false;
-        if (env.SIGNING_SECRET) {
-          const payloadJson = JSON.stringify(stored.payload);
-          valid = await verifySignature(payloadJson, stored.signature, env.SIGNING_SECRET);
+        if (!env.SIGNING_SECRET) {
+          return Response.json(
+            { error: "Signing service not configured" },
+            { status: 503, headers: corsHeaders }
+          );
         }
+
+        const payloadJson = JSON.stringify(stored.payload);
+        const valid = await verifySignature(payloadJson, stored.signature, env.SIGNING_SECRET);
 
         if (!valid) {
           return Response.json(

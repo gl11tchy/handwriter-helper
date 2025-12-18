@@ -588,6 +588,11 @@ async function performOCR(
 
     return results;
   } catch (err) {
+    // Re-throw cancellation errors so pipeline actually stops
+    if (err instanceof Error && err.message === "Pipeline cancelled") {
+      throw err;
+    }
+
     console.error("Cloud Vision OCR failed:", err);
 
     // Return empty results for all lines on failure
