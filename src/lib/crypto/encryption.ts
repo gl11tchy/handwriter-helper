@@ -1,9 +1,28 @@
 // Report encryption using AES-GCM
 // The encryption key is never sent to the server - it stays in the URL fragment
 
-import { arrayBufferToBase64Url, base64UrlToArrayBuffer } from "./keys";
-
 const ALGORITHM = "AES-GCM";
+
+// Base64URL encoding/decoding utilities
+function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function base64UrlToArrayBuffer(base64url: string): ArrayBuffer {
+  const base64 = base64url.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer;
+}
 const KEY_LENGTH = 256;
 const NONCE_LENGTH = 12; // 96 bits for AES-GCM
 

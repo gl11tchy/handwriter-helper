@@ -27,11 +27,6 @@ export type AssignmentPayload = {
   precisionMode: "max";
 };
 
-export type AssignmentToken = {
-  payloadB64: string;
-  sigB64: string;
-  pubB64: string;
-};
 
 // ============================================
 // Quality and Findings Types
@@ -108,9 +103,8 @@ export type InputFileInfo = {
 export type Report = {
   reportId: string;
   createdAt: string;
-  assignmentToken: AssignmentToken;
+  assignmentId: string;
   assignmentPayload: AssignmentPayload;
-  assignmentSignatureValid: boolean;
   inputFile: InputFileInfo;
   pages: PageData[];
   extractedTextPerLine: ExtractedLine[];
@@ -156,24 +150,6 @@ export type DetectedLine = {
   bbox: BoundingBox;
   baseline: number; // y-coordinate
   confidence: number;
-};
-
-// ============================================
-// Keyholder State Types
-// ============================================
-
-export type KeyholderKeys = {
-  publicKeyB64: string;
-  hasPrivateKey: boolean;
-  createdAt: string;
-};
-
-export type AssignmentHistoryItem = {
-  assignmentId: string;
-  createdAt: string;
-  requiredLineCount: number;
-  expectedStyle: HandwritingStyle;
-  token: string;
 };
 
 // ============================================

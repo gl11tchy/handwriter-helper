@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useLocation, Link } from "react-router-dom";
+import { useParams, Link } from "react-router-dom";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -12,6 +12,7 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,11 +24,6 @@ import { AnnotatedViewer } from "@/components/annotated-viewer";
 import { FindingsTable } from "@/components/findings-table";
 import { ScoreCard } from "@/components/score-card";
 import {
-  parseAssignmentToken,
-  verifyAssignmentToken,
-  decodePayloadUnsafe,
-} from "@/lib/crypto/keys";
-import {
   generateEncryptionKey,
   exportKeyToBase64,
   encryptData,
@@ -35,11 +31,12 @@ import {
 } from "@/lib/crypto/encryption";
 import { runPipeline, type PipelineResult } from "@/lib/pipeline";
 import { api } from "@/lib/api";
-import type { AssignmentPayload, AssignmentToken, PipelineProgress, Report, Finding } from "@/types";
+import type { AssignmentPayload, PipelineProgress, Report, Finding } from "@/types";
 
 type RunnerState =
   | "loading"
   | "invalid"
+  | "tampered"
   | "ready"
   | "uploading"
   | "processing"
@@ -47,14 +44,12 @@ type RunnerState =
   | "generating_link";
 
 export default function AssignmentRunner() {
-  const location = useLocation();
+  const { assignmentId } = useParams<{ assignmentId: string }>();
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const [state, setState] = useState<RunnerState>("loading");
   const [error, setError] = useState<string | null>(null);
-  const [token, setToken] = useState<AssignmentToken | null>(null);
   const [payload, setPayload] = useState<AssignmentPayload | null>(null);
-  const [signatureValid, setSignatureValid] = useState(false);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [progress, setProgress] = useState<PipelineProgress | null>(null);
@@ -65,53 +60,35 @@ export default function AssignmentRunner() {
   const [reportLink, setReportLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  // Parse token from URL
+  // Fetch assignment from server (with signature verification)
   useEffect(() => {
-    const parseToken = async () => {
-      const hash = location.hash;
-      if (!hash) {
-        setError("No assignment token found in URL");
+    const fetchAssignment = async () => {
+      if (!assignmentId) {
+        setError("No assignment ID found");
         setState("invalid");
         return;
       }
 
-      const params = new URLSearchParams(hash.slice(1));
-      const tokenStr = params.get("token");
+      try {
+        const response = await api.getAssignment(assignmentId);
+        setPayload(response.payload);
+        setState("ready");
+      } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : "Failed to load assignment";
 
-      if (!tokenStr) {
-        setError("Invalid URL format");
-        setState("invalid");
-        return;
+        // Check if it's a tamper error
+        if (errorMessage.includes("modified") || errorMessage.includes("invalid")) {
+          setError(errorMessage);
+          setState("tampered");
+        } else {
+          setError(errorMessage);
+          setState("invalid");
+        }
       }
-
-      const parsedToken = parseAssignmentToken(tokenStr);
-      if (!parsedToken) {
-        setError("Could not parse assignment token");
-        setState("invalid");
-        return;
-      }
-
-      setToken(parsedToken);
-
-      // Decode payload (without verifying signature yet)
-      const decodedPayload = decodePayloadUnsafe(parsedToken);
-      if (!decodedPayload) {
-        setError("Could not decode assignment data");
-        setState("invalid");
-        return;
-      }
-
-      setPayload(decodedPayload);
-
-      // Verify signature
-      const verification = await verifyAssignmentToken(parsedToken);
-      setSignatureValid(verification.valid);
-
-      setState("ready");
     };
 
-    parseToken();
-  }, [location.hash]);
+    fetchAssignment();
+  }, [assignmentId]);
 
   const handleFileSelect = useCallback((file: File) => {
     setSelectedFile(file);
@@ -122,7 +99,7 @@ export default function AssignmentRunner() {
   }, []);
 
   const handleRunPipeline = useCallback(async () => {
-    if (!selectedFile || !payload || !token) return;
+    if (!selectedFile || !payload) return;
 
     setState("processing");
     setProgress(null);
@@ -147,26 +124,25 @@ export default function AssignmentRunner() {
         setState("uploading");
       }
     }
-  }, [selectedFile, payload, token]);
+  }, [selectedFile, payload]);
 
   const handleCancel = useCallback(() => {
     abortControllerRef.current?.abort();
   }, []);
 
   const handleGenerateReportLink = useCallback(async () => {
-    if (!result || !token || !payload || !selectedFile) return;
+    if (!result || !payload || !selectedFile || !assignmentId) return;
 
     setState("generating_link");
     setError(null);
 
     try {
-      // Create report object
+      // Create report object (simplified - no token needed)
       const report: Report = {
         reportId: "", // Will be assigned by server
         createdAt: new Date().toISOString(),
-        assignmentToken: token,
+        assignmentId,
         assignmentPayload: payload,
-        assignmentSignatureValid: signatureValid,
         inputFile: {
           name: selectedFile.name,
           type: selectedFile.type,
@@ -206,7 +182,7 @@ export default function AssignmentRunner() {
       setError(e instanceof Error ? e.message : "Failed to generate report link");
       setState("results");
     }
-  }, [result, token, payload, selectedFile, signatureValid]);
+  }, [result, payload, selectedFile, assignmentId]);
 
   const copyReportLink = useCallback(async () => {
     if (!reportLink) return;
@@ -247,13 +223,47 @@ export default function AssignmentRunner() {
               <div className="mx-auto mb-4 p-4 bg-destructive/10 rounded-full w-fit">
                 <XCircle className="h-8 w-8 text-destructive" />
               </div>
-              <CardTitle>Invalid Assignment</CardTitle>
-              <CardDescription>{error || "This assignment link is invalid or malformed."}</CardDescription>
+              <CardTitle>Assignment Not Found</CardTitle>
+              <CardDescription>{error || "This assignment doesn't exist or the link is incorrect."}</CardDescription>
             </CardHeader>
             <CardContent className="flex justify-center">
               <Button asChild>
                 <Link to="/">Return Home</Link>
               </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === "tampered") {
+    return (
+      <div className="container py-8">
+        <div className="max-w-2xl mx-auto">
+          <Card>
+            <CardHeader className="text-center">
+              <div className="mx-auto mb-4 p-4 bg-destructive/10 rounded-full w-fit">
+                <ShieldAlert className="h-8 w-8 text-destructive" />
+              </div>
+              <CardTitle>Assignment Verification Failed</CardTitle>
+              <CardDescription className="text-destructive">
+                {error || "This assignment link has been modified or is invalid."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert variant="destructive">
+                <ShieldAlert className="h-4 w-4" />
+                <AlertTitle>Security Warning</AlertTitle>
+                <AlertDescription>
+                  This assignment could not be verified. Please request a new link from your teacher.
+                </AlertDescription>
+              </Alert>
+              <div className="flex justify-center">
+                <Button asChild>
+                  <Link to="/">Return Home</Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -275,18 +285,9 @@ export default function AssignmentRunner() {
                 </CardTitle>
                 <CardDescription>Complete this assignment by uploading your handwritten work</CardDescription>
               </div>
-              <div className="flex items-center gap-2">
-                {signatureValid ? (
-                  <div className="flex items-center gap-1 text-sm text-success">
-                    <CheckCircle2 className="h-4 w-4" />
-                    <span className="hidden sm:inline">Verified</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1 text-sm text-warning">
-                    <AlertTriangle className="h-4 w-4" />
-                    <span className="hidden sm:inline">Unverified</span>
-                  </div>
-                )}
+              <div className="flex items-center gap-1 text-sm text-green-600">
+                <CheckCircle2 className="h-4 w-4" />
+                <span className="hidden sm:inline">Verified</span>
               </div>
             </div>
           </CardHeader>
@@ -314,16 +315,6 @@ export default function AssignmentRunner() {
               </div>
             )}
 
-            {!signatureValid && (
-              <Alert variant="warning" className="mt-4">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Signature Not Verified</AlertTitle>
-                <AlertDescription>
-                  This assignment&apos;s signature could not be verified. It may have been modified
-                  or created with an untrusted key.
-                </AlertDescription>
-              </Alert>
-            )}
           </CardContent>
         </Card>
 
@@ -404,7 +395,7 @@ export default function AssignmentRunner() {
                     <CardTitle>Report Link Generated</CardTitle>
                   </div>
                   <CardDescription>
-                    Share this link with the keyholder to view your results
+                    Share this link with your teacher to view your results
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -440,7 +431,7 @@ export default function AssignmentRunner() {
                     <div>
                       <p className="font-medium">Ready to share your results?</p>
                       <p className="text-sm text-muted-foreground">
-                        Generate an encrypted link to share with the keyholder
+                        Generate a link to share your results
                       </p>
                     </div>
                     <Button onClick={handleGenerateReportLink}>

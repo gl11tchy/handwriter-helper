@@ -2,12 +2,10 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   AlertTriangle,
-  CheckCircle2,
   XCircle,
   Download,
   FileText,
   Loader2,
-  Shield,
   Calendar,
   File,
 } from "lucide-react";
@@ -18,7 +16,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AnnotatedViewer } from "@/components/annotated-viewer";
 import { FindingsTable } from "@/components/findings-table";
 import { ScoreCard } from "@/components/score-card";
-import { verifyAssignmentToken } from "@/lib/crypto/keys";
 import { importKeyFromBase64, decryptData, extractKeyFromFragment } from "@/lib/crypto/encryption";
 import { api } from "@/lib/api";
 import type { Report, Finding } from "@/types";
@@ -30,7 +27,6 @@ export default function ReportViewer() {
   const [state, setState] = useState<ViewerState>("loading");
   const [error, setError] = useState<string | null>(null);
   const [report, setReport] = useState<Report | null>(null);
-  const [signatureVerified, setSignatureVerified] = useState<boolean | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -63,11 +59,6 @@ export default function ReportViewer() {
         reportData.reportId = reportId;
 
         setReport(reportData);
-
-        // Verify assignment signature
-        const verification = await verifyAssignmentToken(reportData.assignmentToken);
-        setSignatureVerified(verification.valid);
-
         setState("ready");
       } catch (e) {
         console.error("Failed to load report:", e);
@@ -179,44 +170,6 @@ export default function ReportViewer() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Signature Status */}
-            <div className="flex items-center gap-4 p-4 rounded-lg bg-muted/50">
-              <Shield className="h-8 w-8 text-muted-foreground" />
-              <div className="flex-1">
-                <p className="font-medium">Assignment Signature</p>
-                <p className="text-sm text-muted-foreground">
-                  Verifies the assignment was not modified after creation
-                </p>
-              </div>
-              {signatureVerified === true ? (
-                <div className="flex items-center gap-2 text-success">
-                  <CheckCircle2 className="h-5 w-5" />
-                  <span className="font-medium">Verified</span>
-                </div>
-              ) : signatureVerified === false ? (
-                <div className="flex items-center gap-2 text-destructive">
-                  <XCircle className="h-5 w-5" />
-                  <span className="font-medium">Invalid</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                  <span>Verifying...</span>
-                </div>
-              )}
-            </div>
-
-            {signatureVerified === false && (
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertTitle>Signature Verification Failed</AlertTitle>
-                <AlertDescription>
-                  The assignment signature is invalid. This could mean the assignment was modified
-                  after it was created, or it was created with an untrusted key.
-                </AlertDescription>
-              </Alert>
-            )}
-
             {/* Metadata */}
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
               <div className="flex items-center gap-2">
