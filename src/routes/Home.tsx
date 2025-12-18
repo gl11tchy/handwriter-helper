@@ -266,18 +266,18 @@ export default function Home() {
           <div className="flex flex-col items-center text-center space-y-6 max-w-3xl mx-auto">
             <div className="h-10 overflow-hidden lines-fade">
               <div className="animate-lines" key={lineNum}>
-                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-[35px]">{lineNum}. Assign a task. Grade handwriting. Generate a report.</p>
-                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-[35px]">{lineNum + 1}. Assign a task. Grade handwriting. Generate a report.</p>
+                <p className="text-xl md:text-2xl font-brand text-foreground/80 leading-[35px]">{lineNum}. Assign a task. Grade handwriting. Generate a report.</p>
+                <p className="text-xl md:text-2xl font-brand text-foreground/80 leading-[35px]">{lineNum + 1}. Assign a task. Grade handwriting. Generate a report.</p>
               </div>
             </div>
             <div className="flex gap-4">
-              <Button size="lg" onClick={() => setCreateModalOpen(true)}>
+              <Button size="lg" className="transition-all duration-200 hover:!bg-primary hover:scale-[1.02] hover:shadow-[0_0_20px_rgba(212,175,55,0.3)]" onClick={() => setCreateModalOpen(true)}>
                 <Plus className="mr-2 h-5 w-5" />
                 Create Assignment
               </Button>
-              <Button size="lg" variant="outline" onClick={() => setGradeModalOpen(true)}>
+              <Button size="lg" variant="outline" className="!border-foreground/50 !text-foreground bg-transparent transition-all duration-200 hover:!border-foreground hover:!text-foreground hover:bg-foreground/10" onClick={() => setGradeModalOpen(true)}>
                 <FileCheck className="mr-2 h-5 w-5" />
-                Quick Grade
+                Upload & Grade
               </Button>
             </div>
           </div>
