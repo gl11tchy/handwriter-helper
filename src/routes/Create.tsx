@@ -79,6 +79,8 @@ export default function Create() {
     setExpectedStyle("print");
     setPaperType("ruled");
     setNumberingRequired(false);
+    setNumberingStartAt(1);
+    setNumberingFormat("dot");
     setExpectedLines([]);
     setAssignmentId(null);
     setError(null);
@@ -176,7 +178,10 @@ export default function Create() {
                           type="number"
                           min={0}
                           value={numberingStartAt}
-                          onChange={(e) => setNumberingStartAt(parseInt(e.target.value) || 1)}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            setNumberingStartAt(isNaN(val) ? 1 : val);
+                          }}
                         />
                       </div>
                       <div className="space-y-2">
