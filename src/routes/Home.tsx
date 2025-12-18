@@ -271,7 +271,7 @@ export default function Home() {
               </div>
             </div>
             <div className="flex gap-4">
-              <Button size="lg" className="transition-all duration-200 hover:scale-[1.02] hover:shadow-[0_0_20px_rgba(212,175,55,0.3)]" onClick={() => setCreateModalOpen(true)}>
+              <Button size="lg" className="transition-all duration-200 hover:!bg-primary hover:scale-[1.02] hover:shadow-[0_0_20px_rgba(212,175,55,0.3)]" onClick={() => setCreateModalOpen(true)}>
                 <Plus className="mr-2 h-5 w-5" />
                 Create Assignment
               </Button>
