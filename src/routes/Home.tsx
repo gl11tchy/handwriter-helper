@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from "react";
-import { PenLine, Plus, Copy, Check, ChevronRight, CheckCircle2, Upload, Play, RotateCcw, ExternalLink, AlertTriangle, FileCheck } from "lucide-react";
+import { Plus, Copy, Check, ChevronRight, CheckCircle2, Upload, Play, RotateCcw, ExternalLink, AlertTriangle, FileCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -255,12 +255,6 @@ export default function Home() {
       <section className="py-20 md:py-32">
         <div className="container">
           <div className="flex flex-col items-center text-center space-y-6 max-w-3xl mx-auto">
-            <div className="p-4 bg-primary/10 rounded-2xl">
-              <PenLine className="h-12 w-12 text-primary" />
-            </div>
-            <h1 className="text-5xl md:text-6xl tracking-tight font-brand">
-              writinglines.com
-            </h1>
             <div className="flex gap-4">
               <Button size="lg" onClick={() => setCreateModalOpen(true)}>
                 <Plus className="mr-2 h-5 w-5" />
