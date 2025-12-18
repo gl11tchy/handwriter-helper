@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Plus, Copy, Check, ChevronRight, CheckCircle2, Upload, Play, RotateCcw, ExternalLink, AlertTriangle, FileCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,6 +26,15 @@ export default function Home() {
   // Modal state
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [gradeModalOpen, setGradeModalOpen] = useState(false);
+
+  // Tagline line counter
+  const [lineNum, setLineNum] = useState(1);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLineNum((n) => n + 1);
+    }, 4000); // matches animation duration
+    return () => clearInterval(interval);
+  }, []);
 
   // ========== CREATE ASSIGNMENT STATE ==========
   const [wizardStep, setWizardStep] = useState(1);
@@ -256,9 +265,9 @@ export default function Home() {
         <div className="container">
           <div className="flex flex-col items-center text-center space-y-6 max-w-3xl mx-auto">
             <div className="h-8 overflow-hidden">
-              <div className="animate-lines">
-                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">Assign a task. Grade handwriting. Generate a report.</p>
-                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">Assign a task. Grade handwriting. Generate a report.</p>
+              <div className="animate-lines" key={lineNum}>
+                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">{lineNum}. Assign a task. Grade handwriting. Generate a report.</p>
+                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">{lineNum + 1}. Assign a task. Grade handwriting. Generate a report.</p>
               </div>
             </div>
             <div className="flex gap-4">
