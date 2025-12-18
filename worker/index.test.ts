@@ -214,7 +214,7 @@ describe("Worker", () => {
       const data = (await response.json()) as ErrorResponse;
 
       expect(response.status).toBe(400);
-      expect(data.error).toBe("Invalid assignment ID");
+      expect(data.error).toBe("Invalid assignment ID format");
     });
 
     it("returns 503 when signing secret is not configured", async () => {

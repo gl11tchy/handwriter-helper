@@ -425,9 +425,13 @@ export default {
       if (url.pathname.startsWith("/api/assignment/") && request.method === "GET") {
         const assignmentId = url.pathname.replace("/api/assignment/", "");
 
+        // Log for debugging
+        console.log("GET assignment request:", { assignmentId, pathname: url.pathname });
+
         if (!/^[a-z0-9-]+$/i.test(assignmentId)) {
+          console.log("Invalid assignment ID format:", assignmentId);
           return Response.json(
-            { error: "Invalid assignment ID" },
+            { error: "Invalid assignment ID format", debug: { assignmentId } },
             { status: 400, headers: corsHeaders }
           );
         }
@@ -435,17 +439,19 @@ export default {
         let object;
         try {
           object = await env.STORAGE.get(`assignments/${assignmentId}.json`);
+          console.log("Storage.get result:", { found: !!object, assignmentId });
         } catch (storageError) {
           console.error("Storage error fetching assignment:", storageError);
           return Response.json(
-            { error: "Failed to fetch assignment from storage" },
+            { error: "Failed to fetch assignment from storage", debug: { assignmentId, storageError: String(storageError) } },
             { status: 500, headers: corsHeaders }
           );
         }
 
         if (!object) {
+          console.log("Assignment not found in storage:", assignmentId);
           return Response.json(
-            { error: "Assignment not found" },
+            { error: "Assignment not found", debug: { assignmentId } },
             { status: 404, headers: corsHeaders }
           );
         }
@@ -453,10 +459,11 @@ export default {
         let stored: StoredAssignment;
         try {
           stored = await object.json() as StoredAssignment;
+          console.log("Parsed stored assignment:", { hasPayload: !!stored?.payload, hasSignature: !!stored?.signature });
         } catch (parseError) {
           console.error("JSON parse error for assignment:", parseError);
           return Response.json(
-            { error: "Assignment data is corrupted" },
+            { error: "Assignment data is corrupted", debug: { assignmentId, parseError: String(parseError) } },
             { status: 500, headers: corsHeaders }
           );
         }
@@ -465,13 +472,14 @@ export default {
         if (!stored || !stored.payload || !stored.signature) {
           console.error("Invalid stored assignment structure:", { hasPayload: !!stored?.payload, hasSignature: !!stored?.signature });
           return Response.json(
-            { error: "Assignment data is incomplete or corrupted" },
+            { error: "Assignment data is incomplete or corrupted", debug: { hasPayload: !!stored?.payload, hasSignature: !!stored?.signature } },
             { status: 500, headers: corsHeaders }
           );
         }
 
         // Verify signature
         if (!env.SIGNING_SECRET) {
+          console.error("SIGNING_SECRET not configured");
           return Response.json(
             { error: "Signing service not configured" },
             { status: 503, headers: corsHeaders }
@@ -482,21 +490,24 @@ export default {
         try {
           const payloadJson = JSON.stringify(stored.payload);
           valid = await verifySignature(payloadJson, stored.signature, env.SIGNING_SECRET);
+          console.log("Signature verification result:", { valid });
         } catch (verifyError) {
           console.error("Signature verification error:", verifyError);
           return Response.json(
-            { error: "This assignment link is invalid or has been modified. Please request a new link from your teacher.", tampered: true },
+            { error: "This assignment link is invalid or has been modified. Please request a new link from your teacher.", tampered: true, debug: { verifyError: String(verifyError) } },
             { status: 403, headers: corsHeaders }
           );
         }
 
         if (!valid) {
+          console.log("Signature verification failed - tampered data");
           return Response.json(
             { error: "This assignment link is invalid or has been modified. Please request a new link from your teacher.", tampered: true },
             { status: 403, headers: corsHeaders }
           );
         }
 
+        console.log("Assignment retrieved successfully:", assignmentId);
         return Response.json(
           { payload: stored.payload, verified: true },
           { headers: corsHeaders }
