@@ -266,8 +266,8 @@ export default function Home() {
           <div className="flex flex-col items-center text-center space-y-6 max-w-3xl mx-auto">
             <div className="h-10 overflow-hidden lines-fade">
               <div className="animate-lines" key={lineNum}>
-                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">{lineNum}. Assign a task. Grade handwriting. Generate a report.</p>
-                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-8">{lineNum + 1}. Assign a task. Grade handwriting. Generate a report.</p>
+                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-[35px]">{lineNum}. Assign a task. Grade handwriting. Generate a report.</p>
+                <p className="text-xl md:text-2xl font-brand text-muted-foreground leading-[35px]">{lineNum + 1}. Assign a task. Grade handwriting. Generate a report.</p>
               </div>
             </div>
             <div className="flex gap-4">
