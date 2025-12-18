@@ -2,6 +2,25 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import worker from "./index";
 import type { Env } from "./env";
 
+// Response types for type assertions
+type HealthResponse = { status: string; timestamp: string };
+type ErrorResponse = { error: string };
+type AssignmentCreateResponse = {
+  assignmentId: string;
+  payload: { requiredLineCount: number; expectedStyle: string; assignmentId: string };
+};
+type AssignmentGetResponse = {
+  payload: { assignmentId: string };
+  verified: boolean;
+};
+type ReportCreateResponse = { reportId: string };
+type ReportGetResponse = {
+  ciphertextB64: string;
+  nonceB64: string;
+  meta: { size: number };
+};
+type OcrResponse = { text: string; words: unknown[] };
+
 // Mock R2 storage
 function createMockR2(): R2Bucket {
   const storage = new Map<string, string>();
@@ -90,7 +109,7 @@ describe("Worker", () => {
     it("returns ok status", async () => {
       const request = createRequest("/api/health");
       const response = await worker.fetch(request, env);
-      const data = await response.json();
+      const data = (await response.json()) as HealthResponse;
 
       expect(response.status).toBe(200);
       expect(data.status).toBe("ok");
@@ -112,7 +131,7 @@ describe("Worker", () => {
       });
 
       const response = await worker.fetch(request, env);
-      const data = await response.json();
+      const data = (await response.json()) as AssignmentCreateResponse;
 
       expect(response.status).toBe(201);
       expect(data.assignmentId).toBeDefined();
@@ -131,7 +150,7 @@ describe("Worker", () => {
       });
 
       const response = await worker.fetch(request, env);
-      const data = await response.json();
+      const data = (await response.json()) as ErrorResponse;
 
       expect(response.status).toBe(400);
       expect(data.error).toContain("Missing required fields");
@@ -153,12 +172,12 @@ describe("Worker", () => {
       });
 
       const createResponse = await worker.fetch(assignmentCreateReq, env);
-      const { assignmentId } = await createResponse.json();
+      const { assignmentId } = (await createResponse.json()) as AssignmentCreateResponse;
 
       // Then retrieve it
       const getRequest = createRequest(`/api/assignment/${assignmentId}`);
       const getResponse = await worker.fetch(getRequest, env);
-      const getData = await getResponse.json();
+      const getData = (await getResponse.json()) as AssignmentGetResponse;
 
       expect(getResponse.status).toBe(200);
       expect(getData.verified).toBe(true);
@@ -168,7 +187,7 @@ describe("Worker", () => {
     it("returns 404 for non-existent assignment", async () => {
       const request = createRequest("/api/assignment/nonexistent-id");
       const response = await worker.fetch(request, env);
-      const data = await response.json();
+      const data = (await response.json()) as ErrorResponse;
 
       expect(response.status).toBe(404);
       expect(data.error).toBe("Assignment not found");
@@ -177,7 +196,7 @@ describe("Worker", () => {
     it("returns 400 for invalid assignment ID format", async () => {
       const request = createRequest("/api/assignment/invalid!@#id");
       const response = await worker.fetch(request, env);
-      const data = await response.json();
+      const data = (await response.json()) as ErrorResponse;
 
       expect(response.status).toBe(400);
       expect(data.error).toBe("Invalid assignment ID");
@@ -195,7 +214,7 @@ describe("Worker", () => {
       });
 
       const response = await worker.fetch(request, envWithoutSecret);
-      const data = await response.json();
+      const data = (await response.json()) as ErrorResponse;
 
       expect(response.status).toBe(503);
       expect(data.error).toBe("Signing service not configured");
@@ -217,7 +236,7 @@ describe("Worker", () => {
       });
 
       const response = await worker.fetch(request, env);
-      const data = await response.json();
+      const data = (await response.json()) as ReportCreateResponse;
 
       expect(response.status).toBe(201);
       expect(data.reportId).toBeDefined();
@@ -234,7 +253,7 @@ describe("Worker", () => {
       });
 
       const response = await worker.fetch(request, env);
-      const data = await response.json();
+      const data = (await response.json()) as ErrorResponse;
 
       expect(response.status).toBe(400);
       expect(data.error).toBe("Invalid request body");
@@ -259,12 +278,12 @@ describe("Worker", () => {
       });
 
       const uploadResponse = await worker.fetch(uploadRequest, env);
-      const { reportId } = await uploadResponse.json();
+      const { reportId } = (await uploadResponse.json()) as ReportCreateResponse;
 
       // Then retrieve it
       const getRequest = createRequest(`/api/report/${reportId}`);
       const getResponse = await worker.fetch(getRequest, env);
-      const getData = await getResponse.json();
+      const getData = (await getResponse.json()) as ReportGetResponse;
 
       expect(getResponse.status).toBe(200);
       expect(getData.ciphertextB64).toBe("test-encrypted-data");
@@ -275,7 +294,7 @@ describe("Worker", () => {
     it("returns 404 for non-existent report", async () => {
       const request = createRequest("/api/report/nonexistent-id");
       const response = await worker.fetch(request, env);
-      const data = await response.json();
+      const data = (await response.json()) as ErrorResponse;
 
       expect(response.status).toBe(404);
       expect(data.error).toBe("Report not found");
@@ -284,7 +303,7 @@ describe("Worker", () => {
     it("returns 400 for invalid report ID format", async () => {
       const request = createRequest("/api/report/invalid!@#id");
       const response = await worker.fetch(request, env);
-      const data = await response.json();
+      const data = (await response.json()) as ErrorResponse;
 
       expect(response.status).toBe(400);
       expect(data.error).toBe("Invalid report ID");
@@ -359,7 +378,7 @@ describe("Worker", () => {
       });
 
       const response = await worker.fetch(request, env);
-      const data = await response.json();
+      const data = (await response.json()) as OcrResponse;
 
       expect(response.status).toBe(200);
       expect(data.text).toBe("Hello World");
@@ -373,7 +392,7 @@ describe("Worker", () => {
       });
 
       const response = await worker.fetch(request, env);
-      const data = await response.json();
+      const data = (await response.json()) as ErrorResponse;
 
       expect(response.status).toBe(400);
       expect(data.error).toBe("Missing imageB64 in request body");
@@ -387,7 +406,7 @@ describe("Worker", () => {
       });
 
       const response = await worker.fetch(request, envWithoutKey);
-      const data = await response.json();
+      const data = (await response.json()) as ErrorResponse;
 
       expect(response.status).toBe(503);
       expect(data.error).toBe("OCR service not configured");
@@ -398,7 +417,7 @@ describe("Worker", () => {
     it("returns 404 for unknown routes", async () => {
       const request = createRequest("/api/unknown");
       const response = await worker.fetch(request, env);
-      const data = await response.json();
+      const data = (await response.json()) as ErrorResponse;
 
       expect(response.status).toBe(404);
       expect(data.error).toBe("Not found");
