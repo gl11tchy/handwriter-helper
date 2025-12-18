@@ -1,7 +1,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { PenLine, Home, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -44,10 +43,6 @@ export function Header() {
             );
           })}
         </nav>
-
-        <div className="flex items-center gap-2">
-          <ThemeToggle />
-        </div>
       </div>
     </header>
   );

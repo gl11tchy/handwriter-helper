@@ -305,7 +305,7 @@ export default function Home() {
                     id="lineCount"
                     type="number"
                     min={1}
-                    max={500}
+                    max={100}
                     value={lineCount}
                     onChange={(e) => setLineCount(Math.max(1, parseInt(e.target.value) || 1))}
                   />
@@ -461,7 +461,7 @@ export default function Home() {
                 <Input
                   type="number"
                   min={1}
-                  max={500}
+                  max={100}
                   value={gradeLineCount}
                   onChange={(e) => setGradeLineCount(Math.max(1, parseInt(e.target.value) || 1))}
                 />
