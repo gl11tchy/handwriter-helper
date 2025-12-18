@@ -634,7 +634,8 @@ export default {
                 if (stored?.payload?.notifyEmail) {
                   const assignmentText = stored.payload.expectedContent.lines[0] || "Handwriting assignment";
                   // Build the full report URL with the encryption key in the fragment
-                  const reportUrl = `${env.APP_URL}/report/${reportId}#${body.encryptionKey}`;
+                  // Format must match client: /r/{reportId}#k={key}
+                  const reportUrl = `${env.APP_URL}/r/${reportId}#k=${body.encryptionKey}`;
                   emailSent = await sendResultsEmail(
                     stored.payload.notifyEmail,
                     reportUrl,
