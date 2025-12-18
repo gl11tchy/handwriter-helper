@@ -126,8 +126,8 @@ function normalizeText(text: string): string {
     // Common OCR substitutions
     .replace(/0/g, "o")
     .replace(/1/g, "l")
-    .replace(/[''`]/g, "'")
-    .replace(/[""]/g, '"')
+    .replace(/[\u2018\u2019`]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
     // Remove extra whitespace
     .replace(/\s+/g, " ");
 }
@@ -1156,7 +1156,7 @@ export async function runPipeline(
 
   return {
     pages: pageDataResults,
-    extractedTextPerLine: allExtracted.map(({ characters, ...rest }) => rest),
+    extractedTextPerLine: allExtracted.map(({ characters: _characters, ...rest }) => rest),
     detectedLineCount: totalDetectedLines,
     quality,
     findings: allFindings.filter(
