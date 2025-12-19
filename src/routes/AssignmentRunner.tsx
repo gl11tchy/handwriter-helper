@@ -137,6 +137,7 @@ export default function AssignmentRunner() {
     setProgress(null);
     setReportLink(null);
     setError(null);
+    setEmailSent(false);
     setState("uploading");
   }, []);
 
@@ -148,6 +149,7 @@ export default function AssignmentRunner() {
     setResult(null);
     setError(null);
     setReportLink(null);
+    setEmailSent(false);
 
     abortControllerRef.current = new AbortController();
 
@@ -186,17 +188,22 @@ export default function AssignmentRunner() {
         const reportJson = JSON.stringify(report);
         const { ciphertextB64, nonceB64 } = await encryptData(reportJson, encKey);
 
-        const { reportId } = await api.uploadReport({
+        // Upload to server - only include encryptionKey if email notification is configured
+        const { reportId, emailSent: wasEmailSent } = await api.uploadReport({
           ciphertextB64,
           nonceB64,
           meta: {
             createdAt: report.createdAt,
             size: ciphertextB64.length,
           },
+          assignmentId,
+          // Only send key to server if teacher configured email notification
+          ...(payload.notifyEmail && { encryptionKey: keyB64 }),
         });
 
         const url = buildReportUrl(reportId, keyB64);
         setReportLink(url);
+        setEmailSent(wasEmailSent || false);
         setState("results");
       } catch (linkError) {
         // Report link generation failed, but results are available
