@@ -73,16 +73,12 @@ export default function AssignmentRunner() {
       const now = new Date().getTime();
       const dueTime = new Date(payload.dueDate!).getTime();
       const diff = dueTime - now;
+      const absDiff = Math.abs(diff);
 
-      if (diff <= 0) {
-        setCountdown("Past due");
-        return;
-      }
-
-      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      const days = Math.floor(absDiff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((absDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((absDiff % (1000 * 60)) / 1000);
 
       const parts: string[] = [];
       if (days > 0) parts.push(`${days}d`);
@@ -364,7 +360,7 @@ export default function AssignmentRunner() {
                 <Clock className={`h-5 w-5 ${isPastDue ? "text-destructive" : "text-primary"}`} />
                 <div className="flex-1">
                   <p className="text-sm text-muted-foreground">
-                    {isPastDue ? "Due date was" : "Due in"}
+                    {isPastDue ? "Overdue by" : "Due in"}
                   </p>
                   <p className={`font-medium text-lg ${isPastDue ? "text-destructive" : ""}`}>
                     {countdown}
