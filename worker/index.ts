@@ -623,8 +623,11 @@ export default {
         // Send email notification if assignment has notifyEmail configured
         let emailSent = false;
         if (body.assignmentId && body.encryptionKey && env.RESEND_API_KEY) {
+          // Validate assignmentId format to prevent path traversal
+          if (!/^[a-z0-9-]+$/i.test(body.assignmentId)) {
+            console.error("Invalid assignmentId format, skipping email");
           // Validate encryptionKey is valid base64url to prevent injection
-          if (!isValidBase64Url(body.encryptionKey)) {
+          } else if (!isValidBase64Url(body.encryptionKey)) {
             console.error("Invalid encryptionKey format, skipping email");
           } else {
             try {
