@@ -5,4 +5,5 @@ export interface Env {
   ENVIRONMENT: string;
   GOOGLE_CLOUD_API_KEY: string;
   SIGNING_SECRET: string;
+  RESEND_API_KEY?: string;
 }

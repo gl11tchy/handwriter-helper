@@ -26,6 +26,7 @@ export type AssignmentPayload = {
   numbering: NumberingRule;
   expectedContent: ExpectedContent;
   precisionMode: "max";
+  notifyEmail?: string;
 };
 
 
@@ -164,10 +165,13 @@ export type UploadReportRequest = {
     createdAt: string;
     size: number;
   };
+  assignmentId?: string;
+  encryptionKey?: string;
 };
 
 export type UploadReportResponse = {
   reportId: string;
+  emailSent?: boolean;
 };
 
 export type GetReportResponse = {

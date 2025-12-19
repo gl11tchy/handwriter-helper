@@ -12,6 +12,7 @@ import {
   FileText,
   Loader2,
   ShieldAlert,
+  Mail,
   Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -59,6 +60,7 @@ export default function AssignmentRunner() {
 
   const [reportLink, setReportLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
   const [countdown, setCountdown] = useState<string | null>(null);
 
   // Countdown timer for due date
@@ -135,6 +137,7 @@ export default function AssignmentRunner() {
     setProgress(null);
     setReportLink(null);
     setError(null);
+    setEmailSent(false);
     setState("uploading");
   }, []);
 
@@ -146,6 +149,7 @@ export default function AssignmentRunner() {
     setResult(null);
     setError(null);
     setReportLink(null);
+    setEmailSent(false);
 
     abortControllerRef.current = new AbortController();
 
@@ -184,17 +188,22 @@ export default function AssignmentRunner() {
         const reportJson = JSON.stringify(report);
         const { ciphertextB64, nonceB64 } = await encryptData(reportJson, encKey);
 
-        const { reportId } = await api.uploadReport({
+        // Upload to server - only include encryptionKey if email notification is configured
+        const { reportId, emailSent: wasEmailSent } = await api.uploadReport({
           ciphertextB64,
           nonceB64,
           meta: {
             createdAt: report.createdAt,
             size: ciphertextB64.length,
           },
+          assignmentId,
+          // Only send key to server if teacher configured email notification
+          ...(payload.notifyEmail && { encryptionKey: keyB64 }),
         });
 
         const url = buildReportUrl(reportId, keyB64);
         setReportLink(url);
+        setEmailSent(wasEmailSent || false);
         setState("results");
       } catch (linkError) {
         // Report link generation failed, but results are available
@@ -245,17 +254,23 @@ export default function AssignmentRunner() {
       const reportJson = JSON.stringify(report);
       const { ciphertextB64, nonceB64 } = await encryptData(reportJson, encKey);
 
-      const { reportId } = await api.uploadReport({
+      // Upload to server - only include encryptionKey if email notification is configured
+      const { reportId, emailSent: wasEmailSent } = await api.uploadReport({
         ciphertextB64,
         nonceB64,
         meta: {
           createdAt: report.createdAt,
           size: ciphertextB64.length,
         },
+        assignmentId,
+        // Only send key to server if teacher configured email notification
+        ...(payload.notifyEmail && { encryptionKey: keyB64 }),
       });
 
+      // Build actual report URL with key in fragment
       const url = buildReportUrl(reportId, keyB64);
       setReportLink(url);
+      setEmailSent(wasEmailSent || false);
       setState("results");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate report link");
@@ -275,6 +290,7 @@ export default function AssignmentRunner() {
     setResult(null);
     setProgress(null);
     setReportLink(null);
+    setEmailSent(false);
     setError(null);
     setState("ready");
   }, []);
@@ -540,6 +556,15 @@ export default function AssignmentRunner() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {emailSent && (
+                    <Alert className="bg-green-500/10 border-green-500/50">
+                      <Mail className="h-4 w-4 text-green-600" />
+                      <AlertTitle className="text-green-600">Email Sent</AlertTitle>
+                      <AlertDescription>
+                        Your teacher has been notified by email with the report link.
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   <div className="flex gap-2">
                     <input
                       readOnly
@@ -555,6 +580,15 @@ export default function AssignmentRunner() {
                       </a>
                     </Button>
                   </div>
+                  <Alert>
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Important</AlertTitle>
+                    <AlertDescription>
+                      {payload?.notifyEmail
+                        ? "The decryption key was shared with the server for email notification. Only people with this link can view the report."
+                        : "The decryption key is in the URL fragment and is not sent to the server. Only people with this exact link can view the report."}
+                    </AlertDescription>
+                  </Alert>
                 </CardContent>
               </Card>
             )}
