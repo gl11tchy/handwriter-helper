@@ -159,7 +159,7 @@ export default function AssignmentRunner() {
         setState("uploading");
       } else {
         setError(e instanceof Error ? e.message : "Processing failed");
-        setState("results");
+        setState("uploading"); // Keep file selected so user can retry without re-uploading
       }
     }
   }, [selectedFile, payload, assignmentId]);
@@ -167,6 +167,54 @@ export default function AssignmentRunner() {
   const handleCancel = useCallback(() => {
     abortControllerRef.current?.abort();
   }, []);
+
+  const handleRetryReportLink = useCallback(async () => {
+    if (!result || !selectedFile || !payload || !assignmentId) return;
+
+    setState("generating_link");
+    setError(null);
+
+    try {
+      const report: Report = {
+        reportId: "",
+        createdAt: new Date().toISOString(),
+        assignmentId,
+        assignmentPayload: payload,
+        inputFile: {
+          name: selectedFile.name,
+          type: selectedFile.type,
+          size: selectedFile.size,
+        },
+        pages: result.pages,
+        extractedTextPerLine: result.extractedTextPerLine,
+        detectedLineCount: result.detectedLineCount,
+        quality: result.quality,
+        findings: result.findings,
+        score: result.score,
+      };
+
+      const encKey = await generateEncryptionKey();
+      const keyB64 = await exportKeyToBase64(encKey);
+      const reportJson = JSON.stringify(report);
+      const { ciphertextB64, nonceB64 } = await encryptData(reportJson, encKey);
+
+      const { reportId } = await api.uploadReport({
+        ciphertextB64,
+        nonceB64,
+        meta: {
+          createdAt: report.createdAt,
+          size: ciphertextB64.length,
+        },
+      });
+
+      const url = buildReportUrl(reportId, keyB64);
+      setReportLink(url);
+      setState("results");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to generate report link");
+      setState("results");
+    }
+  }, [result, selectedFile, payload, assignmentId]);
 
   const copyReportLink = useCallback(async () => {
     if (!reportLink) return;
@@ -316,6 +364,14 @@ export default function AssignmentRunner() {
                 onFileSelect={handleFileSelect}
               />
 
+              {error && (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Processing Failed</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
               {selectedFile && (
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={resetRunner}>
@@ -324,7 +380,7 @@ export default function AssignmentRunner() {
                   </Button>
                   <Button onClick={handleRunPipeline}>
                     <Play className="mr-2 h-4 w-4" />
-                    Run Assessment
+                    {error ? "Retry Assessment" : "Run Assessment"}
                   </Button>
                 </div>
               )}
@@ -360,25 +416,6 @@ export default function AssignmentRunner() {
             <CardContent>
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Error state - when processing fails before generating results */}
-        {state === "results" && !result && error && (
-          <Card>
-            <CardContent className="py-8">
-              <div className="flex flex-col items-center gap-4 text-center">
-                <XCircle className="h-12 w-12 text-destructive" />
-                <div>
-                  <h3 className="text-lg font-semibold">Processing Failed</h3>
-                  <p className="text-muted-foreground mt-1">{error}</p>
-                </div>
-                <Button onClick={resetRunner} variant="outline">
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  Try Again
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -421,11 +458,25 @@ export default function AssignmentRunner() {
               </Card>
             )}
 
-            {error && (
-              <Alert variant="destructive">
-                <AlertTriangle className="h-4 w-4" />
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
+            {/* Report link generation failed - show retry option */}
+            {!reportLink && error && (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <XCircle className="h-5 w-5 text-destructive" />
+                    <CardTitle>Report Link Generation Failed</CardTitle>
+                  </div>
+                  <CardDescription className="text-destructive">
+                    {error}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button onClick={handleRetryReportLink}>
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Retry Report Link
+                  </Button>
+                </CardContent>
+              </Card>
             )}
 
             {/* Detailed Results */}
