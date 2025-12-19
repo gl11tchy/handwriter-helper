@@ -435,7 +435,7 @@ export default function Home() {
               <div className="flex justify-end pt-2">
                 <Button
                   onClick={handleGenerateAssignment}
-                  disabled={isGenerating || !expectedText.trim()}
+                  disabled={isGenerating || !expectedText.trim() || (notifyEmailEnabled && !notifyEmail.trim())}
                 >
                   {isGenerating ? "Creating..." : "Create"}
                   <ChevronRight className="ml-2 h-4 w-4" />
