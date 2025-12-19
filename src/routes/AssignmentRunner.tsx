@@ -94,6 +94,7 @@ export default function AssignmentRunner() {
     setResult(null);
     setProgress(null);
     setReportLink(null);
+    setError(null);
     setState("uploading");
   }, []);
 
@@ -119,41 +120,47 @@ export default function AssignmentRunner() {
       // Auto-generate report link
       setState("generating_link");
 
-      const report: Report = {
-        reportId: "",
-        createdAt: new Date().toISOString(),
-        assignmentId,
-        assignmentPayload: payload,
-        inputFile: {
-          name: selectedFile.name,
-          type: selectedFile.type,
-          size: selectedFile.size,
-        },
-        pages: pipelineResult.pages,
-        extractedTextPerLine: pipelineResult.extractedTextPerLine,
-        detectedLineCount: pipelineResult.detectedLineCount,
-        quality: pipelineResult.quality,
-        findings: pipelineResult.findings,
-        score: pipelineResult.score,
-      };
+      try {
+        const report: Report = {
+          reportId: "",
+          createdAt: new Date().toISOString(),
+          assignmentId,
+          assignmentPayload: payload,
+          inputFile: {
+            name: selectedFile.name,
+            type: selectedFile.type,
+            size: selectedFile.size,
+          },
+          pages: pipelineResult.pages,
+          extractedTextPerLine: pipelineResult.extractedTextPerLine,
+          detectedLineCount: pipelineResult.detectedLineCount,
+          quality: pipelineResult.quality,
+          findings: pipelineResult.findings,
+          score: pipelineResult.score,
+        };
 
-      const encKey = await generateEncryptionKey();
-      const keyB64 = await exportKeyToBase64(encKey);
-      const reportJson = JSON.stringify(report);
-      const { ciphertextB64, nonceB64 } = await encryptData(reportJson, encKey);
+        const encKey = await generateEncryptionKey();
+        const keyB64 = await exportKeyToBase64(encKey);
+        const reportJson = JSON.stringify(report);
+        const { ciphertextB64, nonceB64 } = await encryptData(reportJson, encKey);
 
-      const { reportId } = await api.uploadReport({
-        ciphertextB64,
-        nonceB64,
-        meta: {
-          createdAt: report.createdAt,
-          size: ciphertextB64.length,
-        },
-      });
+        const { reportId } = await api.uploadReport({
+          ciphertextB64,
+          nonceB64,
+          meta: {
+            createdAt: report.createdAt,
+            size: ciphertextB64.length,
+          },
+        });
 
-      const url = buildReportUrl(reportId, keyB64);
-      setReportLink(url);
-      setState("results");
+        const url = buildReportUrl(reportId, keyB64);
+        setReportLink(url);
+        setState("results");
+      } catch (linkError) {
+        // Report link generation failed, but results are available
+        setError(linkError instanceof Error ? linkError.message : "Failed to generate report link");
+        setState("results");
+      }
     } catch (e) {
       if (e instanceof Error && e.message === "Pipeline cancelled") {
         setState("uploading");
