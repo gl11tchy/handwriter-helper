@@ -45,6 +45,7 @@ export default function Home() {
   const [numberingRequired, setNumberingRequired] = useState(false);
   const [numberingStartAt, setNumberingStartAt] = useState(1);
   const [numberingFormat, setNumberingFormat] = useState<NumberingFormat>("dot");
+  const [dueDate, setDueDate] = useState<string>("");
   const [assignmentId, setAssignmentId] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -80,6 +81,7 @@ export default function Home() {
           ? { required: true, startAt: numberingStartAt, format: numberingFormat }
           : { required: false },
         expectedContent: { mode: "perLine", lines },
+        ...(dueDate && { dueDate: new Date(dueDate).toISOString() }),
       });
 
       setAssignmentId(response.assignmentId);
@@ -108,6 +110,7 @@ export default function Home() {
     setNumberingRequired(false);
     setNumberingStartAt(1);
     setNumberingFormat("dot");
+    setDueDate("");
     setAssignmentId(null);
     setCreateError(null);
   };
@@ -348,6 +351,25 @@ export default function Home() {
                     <SelectItem value="either">Either</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="dueDate">Due Date (optional)</Label>
+                <Input
+                  id="dueDate"
+                  type="datetime-local"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  min={(() => {
+                    const now = new Date();
+                    const year = now.getFullYear();
+                    const month = String(now.getMonth() + 1).padStart(2, "0");
+                    const day = String(now.getDate()).padStart(2, "0");
+                    const hours = String(now.getHours()).padStart(2, "0");
+                    const minutes = String(now.getMinutes()).padStart(2, "0");
+                    return `${year}-${month}-${day}T${hours}:${minutes}`;
+                  })()}
+                />
               </div>
 
               <div className="flex items-center justify-between">

@@ -105,6 +105,7 @@ interface AssignmentPayload {
   version: 1;
   assignmentId: string;
   createdAt: string;
+  dueDate?: string; // Optional ISO 8601 timestamp for assignment deadline
   requiredLineCount: number;
   expectedStyle: "print" | "cursive";
   paperType: "ruled" | "blank" | "either";
@@ -116,8 +117,9 @@ interface AssignmentPayload {
 interface CreateAssignmentRequest {
   requiredLineCount: number;
   expectedStyle: "print" | "cursive";
-  paperType: "ruled" | "blank" | "either";
-  numbering: { required: false } | { required: true; startAt: number; format: "dot" | "paren" | "dash" };
+  paperType?: "ruled" | "blank" | "either";
+  dueDate?: string; // Optional ISO 8601 timestamp
+  numbering?: { required: false } | { required: true; startAt: number; format: "dot" | "paren" | "dash" };
   expectedContent: { mode: "perLine"; lines: string[] };
 }
 
@@ -401,6 +403,7 @@ export default {
           version: 1,
           assignmentId,
           createdAt: new Date().toISOString(),
+          ...(body.dueDate && { dueDate: body.dueDate }),
           requiredLineCount: body.requiredLineCount,
           expectedStyle: body.expectedStyle,
           paperType: body.paperType || "either",
