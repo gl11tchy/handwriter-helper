@@ -19,6 +19,7 @@ export type AssignmentPayload = {
   version: 1;
   assignmentId: string;
   createdAt: string;
+  dueDate?: string; // Optional ISO 8601 timestamp for assignment deadline
   requiredLineCount: number;
   expectedStyle: HandwritingStyle;
   paperType: PaperType;

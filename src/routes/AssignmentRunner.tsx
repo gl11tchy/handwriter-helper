@@ -1,10 +1,9 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
 import {
   AlertTriangle,
   CheckCircle2,
   XCircle,
-  Upload,
   Play,
   Copy,
   Check,
@@ -14,6 +13,7 @@ import {
   Loader2,
   ShieldAlert,
   Mail,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -61,6 +61,45 @@ export default function AssignmentRunner() {
   const [reportLink, setReportLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+  const [countdown, setCountdown] = useState<string | null>(null);
+
+  // Countdown timer for due date
+  useEffect(() => {
+    if (!payload?.dueDate) {
+      setCountdown(null);
+      return;
+    }
+
+    const updateCountdown = () => {
+      const now = new Date().getTime();
+      const dueTime = new Date(payload.dueDate!).getTime();
+      const diff = dueTime - now;
+      const absDiff = Math.abs(diff);
+
+      const days = Math.floor(absDiff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((absDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((absDiff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((absDiff % (1000 * 60)) / 1000);
+
+      const parts: string[] = [];
+      if (days > 0) parts.push(`${days}d`);
+      if (hours > 0) parts.push(`${hours}h`);
+      if (minutes > 0) parts.push(`${minutes}m`);
+      if (days === 0) parts.push(`${seconds}s`); // Only show seconds if less than a day
+
+      setCountdown(parts.join(" "));
+    };
+
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [payload?.dueDate]);
+
+  // Determine if assignment is past due
+  const isPastDue = useMemo(() => {
+    if (!payload?.dueDate) return false;
+    return new Date(payload.dueDate).getTime() < new Date().getTime();
+  }, [payload?.dueDate, countdown]); // countdown dependency ensures re-check
 
   // Fetch assignment from server (with signature verification)
   useEffect(() => {
@@ -97,16 +136,18 @@ export default function AssignmentRunner() {
     setResult(null);
     setProgress(null);
     setReportLink(null);
+    setError(null);
     setState("uploading");
   }, []);
 
   const handleRunPipeline = useCallback(async () => {
-    if (!selectedFile || !payload) return;
+    if (!selectedFile || !payload || !assignmentId) return;
 
     setState("processing");
     setProgress(null);
     setResult(null);
     setError(null);
+    setReportLink(null);
 
     abortControllerRef.current = new AbortController();
 
@@ -117,31 +158,74 @@ export default function AssignmentRunner() {
       });
 
       setResult(pipelineResult);
-      setState("results");
+
+      // Auto-generate report link
+      setState("generating_link");
+
+      try {
+        const report: Report = {
+          reportId: "",
+          createdAt: new Date().toISOString(),
+          assignmentId,
+          assignmentPayload: payload,
+          inputFile: {
+            name: selectedFile.name,
+            type: selectedFile.type,
+            size: selectedFile.size,
+          },
+          pages: pipelineResult.pages,
+          extractedTextPerLine: pipelineResult.extractedTextPerLine,
+          detectedLineCount: pipelineResult.detectedLineCount,
+          quality: pipelineResult.quality,
+          findings: pipelineResult.findings,
+          score: pipelineResult.score,
+        };
+
+        const encKey = await generateEncryptionKey();
+        const keyB64 = await exportKeyToBase64(encKey);
+        const reportJson = JSON.stringify(report);
+        const { ciphertextB64, nonceB64 } = await encryptData(reportJson, encKey);
+
+        const { reportId } = await api.uploadReport({
+          ciphertextB64,
+          nonceB64,
+          meta: {
+            createdAt: report.createdAt,
+            size: ciphertextB64.length,
+          },
+        });
+
+        const url = buildReportUrl(reportId, keyB64);
+        setReportLink(url);
+        setState("results");
+      } catch (linkError) {
+        // Report link generation failed, but results are available
+        setError(linkError instanceof Error ? linkError.message : "Failed to generate report link");
+        setState("results");
+      }
     } catch (e) {
       if (e instanceof Error && e.message === "Pipeline cancelled") {
         setState("uploading");
       } else {
         setError(e instanceof Error ? e.message : "Processing failed");
-        setState("uploading");
+        setState("uploading"); // Keep file selected so user can retry without re-uploading
       }
     }
-  }, [selectedFile, payload]);
+  }, [selectedFile, payload, assignmentId]);
 
   const handleCancel = useCallback(() => {
     abortControllerRef.current?.abort();
   }, []);
 
-  const handleGenerateReportLink = useCallback(async () => {
-    if (!result || !payload || !selectedFile || !assignmentId) return;
+  const handleRetryReportLink = useCallback(async () => {
+    if (!result || !selectedFile || !payload || !assignmentId) return;
 
     setState("generating_link");
     setError(null);
 
     try {
-      // Create report object (simplified - no token needed)
       const report: Report = {
-        reportId: "", // Will be assigned by server
+        reportId: "",
         createdAt: new Date().toISOString(),
         assignmentId,
         assignmentPayload: payload,
@@ -158,11 +242,8 @@ export default function AssignmentRunner() {
         score: result.score,
       };
 
-      // Generate encryption key
       const encKey = await generateEncryptionKey();
       const keyB64 = await exportKeyToBase64(encKey);
-
-      // Encrypt report
       const reportJson = JSON.stringify(report);
       const { ciphertextB64, nonceB64 } = await encryptData(reportJson, encKey);
 
@@ -188,7 +269,7 @@ export default function AssignmentRunner() {
       setError(e instanceof Error ? e.message : "Failed to generate report link");
       setState("results");
     }
-  }, [result, payload, selectedFile, assignmentId]);
+  }, [result, selectedFile, payload, assignmentId]);
 
   const copyReportLink = useCallback(async () => {
     if (!reportLink) return;
@@ -203,6 +284,7 @@ export default function AssignmentRunner() {
     setProgress(null);
     setReportLink(null);
     setEmailSent(false);
+    setError(null);
     setState("ready");
   }, []);
 
@@ -298,30 +380,83 @@ export default function AssignmentRunner() {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             {payload && (
-              <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Required Lines</p>
-                  <p className="font-medium">{payload.requiredLineCount}</p>
+              <>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <p className="text-muted-foreground">Required Lines</p>
+                    <p className="font-medium">{payload.requiredLineCount}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Writing Style</p>
+                    <p className="font-medium capitalize">{payload.expectedStyle}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Paper Type</p>
+                    <p className="font-medium capitalize">{payload.paperType}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Numbering</p>
+                    <p className="font-medium">
+                      {payload.numbering.required ? "Required" : "Not required"}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Writing Style</p>
-                  <p className="font-medium capitalize">{payload.expectedStyle}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Paper Type</p>
-                  <p className="font-medium capitalize">{payload.paperType}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Numbering</p>
-                  <p className="font-medium">
-                    {payload.numbering.required ? "Required" : "Not required"}
+
+                {/* Expected Content */}
+                {payload.expectedContent?.lines && payload.expectedContent.lines.length > 0 && (
+                  <div className="mt-6 pt-4 border-t">
+                    {/* Check if all lines are the same */}
+                    {payload.expectedContent.lines.every(line => line === payload.expectedContent.lines[0]) ? (
+                      <>
+                        <p className="text-sm text-muted-foreground mb-2">
+                          Write this line {payload.expectedContent.lines.length} {payload.expectedContent.lines.length === 1 ? "time" : "times"}
+                        </p>
+                        <p className="font-medium text-base p-3 bg-muted rounded-md">
+                          "{payload.expectedContent.lines[0]}"
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-sm text-muted-foreground mb-2">Lines to Write</p>
+                        <div className="space-y-1 p-3 bg-muted rounded-md max-h-48 overflow-y-auto">
+                          {payload.expectedContent.lines.map((line, idx) => (
+                            <p key={idx} className="font-medium text-sm">
+                              <span className="text-muted-foreground mr-2">{idx + 1}.</span>
+                              "{line}"
+                            </p>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+
+            {payload?.dueDate && countdown && (
+              <div className={`flex items-center gap-3 p-3 rounded-lg ${isPastDue ? "bg-destructive/10 border border-destructive/30" : "bg-muted/50"}`}>
+                <Clock className={`h-5 w-5 ${isPastDue ? "text-destructive" : "text-primary"}`} />
+                <div className="flex-1">
+                  <p className="text-sm text-muted-foreground">
+                    {isPastDue ? "Overdue by" : "Due in"}
                   </p>
+                  <p className={`font-medium text-lg ${isPastDue ? "text-destructive" : ""}`}>
+                    {countdown}
+                  </p>
+                </div>
+                <div className="text-right text-sm text-muted-foreground">
+                  {new Date(payload.dueDate).toLocaleDateString(undefined, {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
                 </div>
               </div>
             )}
-
           </CardContent>
         </Card>
 
@@ -339,6 +474,14 @@ export default function AssignmentRunner() {
                 onFileSelect={handleFileSelect}
               />
 
+              {error && (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Processing Failed</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
               {selectedFile && (
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={resetRunner}>
@@ -347,7 +490,7 @@ export default function AssignmentRunner() {
                   </Button>
                   <Button onClick={handleRunPipeline}>
                     <Play className="mr-2 h-4 w-4" />
-                    Run Assessment
+                    {error ? "Retry Assessment" : "Run Assessment"}
                   </Button>
                 </div>
               )}
@@ -394,12 +537,12 @@ export default function AssignmentRunner() {
             <ScoreCard score={result.score} quality={result.quality} />
 
             {/* Report Link */}
-            {reportLink ? (
+            {reportLink && (
               <Card>
                 <CardHeader>
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="h-5 w-5 text-success" />
-                    <CardTitle>Report Link Generated</CardTitle>
+                    <CardTitle>Report Link Ready</CardTitle>
                   </div>
                   <CardDescription>
                     Share this link with your teacher to view your results
@@ -419,7 +562,7 @@ export default function AssignmentRunner() {
                     <input
                       readOnly
                       value={reportLink}
-                      className="flex-1 px-3 py-2 text-sm bg-muted rounded-md font-mono"
+                      className="flex-1 px-3 py-2 text-sm bg-muted rounded-md font-mono truncate"
                     />
                     <Button onClick={copyReportLink}>
                       {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
@@ -441,21 +584,25 @@ export default function AssignmentRunner() {
                   </Alert>
                 </CardContent>
               </Card>
-            ) : (
+            )}
+
+            {/* Report link generation failed - show retry option */}
+            {!reportLink && error && (
               <Card>
-                <CardContent className="py-6">
-                  <div className="flex justify-end">
-                    <Button onClick={handleGenerateReportLink}>
-                      <Upload className="mr-2 h-4 w-4" />
-                      Generate Report Link
-                    </Button>
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <XCircle className="h-5 w-5 text-destructive" />
+                    <CardTitle>Report Link Generation Failed</CardTitle>
                   </div>
-                  {error && (
-                    <Alert variant="destructive" className="mt-4">
-                      <AlertTriangle className="h-4 w-4" />
-                      <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                  )}
+                  <CardDescription className="text-destructive">
+                    {error}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button onClick={handleRetryReportLink}>
+                    <RotateCcw className="mr-2 h-4 w-4" />
+                    Retry Report Link
+                  </Button>
                 </CardContent>
               </Card>
             )}
