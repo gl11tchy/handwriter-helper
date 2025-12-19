@@ -228,6 +228,7 @@ export default function AssignmentRunner() {
     setResult(null);
     setProgress(null);
     setReportLink(null);
+    setError(null);
     setState("ready");
   }, []);
 
