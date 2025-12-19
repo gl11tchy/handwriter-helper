@@ -359,7 +359,7 @@ export default function AssignmentRunner() {
               </div>
             )}
 
-            {payload?.dueDate && (
+            {payload?.dueDate && countdown && (
               <div className={`flex items-center gap-3 p-3 rounded-lg ${isPastDue ? "bg-destructive/10 border border-destructive/30" : "bg-muted/50"}`}>
                 <Clock className={`h-5 w-5 ${isPastDue ? "text-destructive" : "text-primary"}`} />
                 <div className="flex-1">
