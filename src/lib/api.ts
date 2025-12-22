@@ -46,23 +46,67 @@ export interface OcrResponse {
   words: OcrWord[];
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
-  });
+// Default timeout for API requests (30 seconds)
+const DEFAULT_TIMEOUT = 30000;
 
-  if (!response.ok) {
-    const error = (await response.json().catch(() => ({ error: "Request failed" }))) as {
-      error?: string;
-    };
-    throw new Error(error.error || "Request failed");
+async function request<T>(
+  path: string,
+  options: RequestInit & { timeout?: number } = {}
+): Promise<T> {
+  const { timeout = DEFAULT_TIMEOUT, ...fetchOptions } = options;
+
+  // Create abort controller for timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  // Combine with any existing signal
+  const signal = options.signal
+    ? combineSignals(options.signal, controller.signal)
+    : controller.signal;
+
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...fetchOptions,
+      signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...fetchOptions.headers,
+      },
+    });
+
+    if (!response.ok) {
+      const error = (await response.json().catch(() => ({ error: "Request failed" }))) as {
+        error?: string;
+      };
+      throw new Error(error.error || "Request failed");
+    }
+
+    return response.json();
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      // Check if it was our timeout or an external abort
+      if (controller.signal.aborted && !options.signal?.aborted) {
+        throw new Error("Request timed out. Please check your connection and try again.");
+      }
+      throw new Error("Request was cancelled");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
   }
+}
 
-  return response.json();
+// Combine multiple abort signals into one
+function combineSignals(...signals: AbortSignal[]): AbortSignal {
+  const controller = new AbortController();
+  for (const signal of signals) {
+    if (signal.aborted) {
+      controller.abort();
+      break;
+    }
+    signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  return controller.signal;
 }
 
 export const api = {

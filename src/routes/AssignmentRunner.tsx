@@ -151,13 +151,19 @@ export default function AssignmentRunner() {
     setReportLink(null);
     setEmailSent(false);
 
-    abortControllerRef.current = new AbortController();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
       const pipelineResult = await runPipeline(selectedFile, payload, {
         onProgress: setProgress,
-        signal: abortControllerRef.current.signal,
+        signal: controller.signal,
       });
+
+      // Check if aborted after await - ignore stale results
+      if (controller.signal.aborted) {
+        return;
+      }
 
       setResult(pipelineResult);
 
@@ -211,6 +217,11 @@ export default function AssignmentRunner() {
         setState("results");
       }
     } catch (e) {
+      // Check if this controller was aborted (not a different one)
+      if (controller.signal.aborted) {
+        setState("uploading");
+        return;
+      }
       if (e instanceof Error && e.message === "Pipeline cancelled") {
         setState("uploading");
       } else {
@@ -280,9 +291,13 @@ export default function AssignmentRunner() {
 
   const copyReportLink = useCallback(async () => {
     if (!reportLink) return;
-    await navigator.clipboard.writeText(reportLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(reportLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Could not copy to clipboard. Please copy the link manually.");
+    }
   }, [reportLink]);
 
   const resetRunner = useCallback(() => {
@@ -530,9 +545,17 @@ export default function AssignmentRunner() {
               <CardTitle>Generating Report Link</CardTitle>
               <CardDescription>Encrypting and uploading your results...</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+              <div className="flex justify-center">
+                <Button variant="outline" onClick={() => {
+                  setError("Report link generation cancelled");
+                  setState("results");
+                }}>
+                  Cancel
+                </Button>
               </div>
             </CardContent>
           </Card>

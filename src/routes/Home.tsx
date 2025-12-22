@@ -99,9 +99,14 @@ export default function Home() {
   const copyAssignmentLink = useCallback(async () => {
     if (!assignmentId) return;
     const url = `${window.location.origin}/a/${assignmentId}`;
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback: select the input text for manual copy
+      setCreateError("Could not copy to clipboard. Please copy the link manually.");
+    }
   }, [assignmentId]);
 
   const resetCreateWizard = () => {
@@ -146,7 +151,8 @@ export default function Home() {
     setGradeResult(null);
     setGradeError(null);
 
-    abortControllerRef.current = new AbortController();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     const lines = Array(gradeLineCount).fill(gradeExpectedText);
     const localPayload: AssignmentPayload = {
@@ -166,12 +172,22 @@ export default function Home() {
     try {
       const result = await runPipeline(gradeFile, localPayload, {
         onProgress: setGradeProgress,
-        signal: abortControllerRef.current.signal,
+        signal: controller.signal,
       });
+
+      // Check if aborted after await - ignore stale results
+      if (controller.signal.aborted) {
+        return;
+      }
 
       setGradeResult(result);
       setGradeState("results");
     } catch (e) {
+      // Check if this controller was aborted (not a different one)
+      if (controller.signal.aborted) {
+        setGradeState("input");
+        return;
+      }
       if (e instanceof Error && e.message === "Pipeline cancelled") {
         setGradeState("input");
       } else {
@@ -235,9 +251,13 @@ export default function Home() {
 
   const copyReportLink = useCallback(async () => {
     if (!reportLink) return;
-    await navigator.clipboard.writeText(reportLink);
-    setReportCopied(true);
-    setTimeout(() => setReportCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(reportLink);
+      setReportCopied(true);
+      setTimeout(() => setReportCopied(false), 2000);
+    } catch {
+      setGradeError("Could not copy to clipboard. Please copy the link manually.");
+    }
   }, [reportLink]);
 
   const resetGrade = () => {
