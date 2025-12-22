@@ -63,16 +63,25 @@ export default function AssignmentRunner() {
   const [emailSent, setEmailSent] = useState(false);
   const [countdown, setCountdown] = useState<string | null>(null);
 
+  // Validate and parse due date safely
+  const parsedDueDate = useMemo(() => {
+    if (!payload?.dueDate) return null;
+    const date = new Date(payload.dueDate);
+    // Check if date is valid (Invalid Date returns NaN for getTime())
+    if (isNaN(date.getTime())) return null;
+    return date;
+  }, [payload?.dueDate]);
+
   // Countdown timer for due date
   useEffect(() => {
-    if (!payload?.dueDate) {
+    if (!parsedDueDate) {
       setCountdown(null);
       return;
     }
 
     const updateCountdown = () => {
       const now = new Date().getTime();
-      const dueTime = new Date(payload.dueDate!).getTime();
+      const dueTime = parsedDueDate.getTime();
       const diff = dueTime - now;
       const absDiff = Math.abs(diff);
 
@@ -93,13 +102,13 @@ export default function AssignmentRunner() {
     updateCountdown();
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
-  }, [payload?.dueDate]);
+  }, [parsedDueDate]);
 
   // Determine if assignment is past due
   const isPastDue = useMemo(() => {
-    if (!payload?.dueDate) return false;
-    return new Date(payload.dueDate).getTime() < new Date().getTime();
-  }, [payload?.dueDate, countdown]); // countdown dependency ensures re-check
+    if (!parsedDueDate) return false;
+    return parsedDueDate.getTime() < new Date().getTime();
+  }, [parsedDueDate, countdown]); // countdown dependency ensures re-check
 
   // Fetch assignment from server (with signature verification)
   useEffect(() => {
@@ -457,7 +466,7 @@ export default function AssignmentRunner() {
               </>
             )}
 
-            {payload?.dueDate && countdown && (
+            {parsedDueDate && countdown && (
               <div className={`flex items-center gap-3 p-3 rounded-lg ${isPastDue ? "bg-destructive/10 border border-destructive/30" : "bg-muted/50"}`}>
                 <Clock className={`h-5 w-5 ${isPastDue ? "text-destructive" : "text-primary"}`} />
                 <div className="flex-1">
@@ -469,7 +478,7 @@ export default function AssignmentRunner() {
                   </p>
                 </div>
                 <div className="text-right text-sm text-muted-foreground">
-                  {new Date(payload.dueDate).toLocaleDateString(undefined, {
+                  {parsedDueDate.toLocaleDateString(undefined, {
                     weekday: "short",
                     month: "short",
                     day: "numeric",
