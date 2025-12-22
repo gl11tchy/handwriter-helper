@@ -192,6 +192,7 @@ export default function Home() {
 
       // Check if aborted after await - ignore stale results
       if (controller.signal.aborted) {
+        setGradeState("input");
         return;
       }
 

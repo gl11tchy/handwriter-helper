@@ -47,6 +47,7 @@ type RunnerState =
 export default function AssignmentRunner() {
   const { assignmentId } = useParams<{ assignmentId: string }>();
   const abortControllerRef = useRef<AbortController | null>(null);
+  const reportAbortRef = useRef<{ cancelled: boolean }>({ cancelled: false });
 
   const [state, setState] = useState<RunnerState>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -171,6 +172,7 @@ export default function AssignmentRunner() {
 
       // Check if aborted after await - ignore stale results
       if (controller.signal.aborted) {
+        setState("uploading");
         return;
       }
 
@@ -178,6 +180,7 @@ export default function AssignmentRunner() {
 
       // Auto-generate report link
       setState("generating_link");
+      reportAbortRef.current = { cancelled: false };
 
       try {
         const report: Report = {
@@ -199,9 +202,14 @@ export default function AssignmentRunner() {
         };
 
         const encKey = await generateEncryptionKey();
+        if (reportAbortRef.current.cancelled) return;
+
         const keyB64 = await exportKeyToBase64(encKey);
+        if (reportAbortRef.current.cancelled) return;
+
         const reportJson = JSON.stringify(report);
         const { ciphertextB64, nonceB64 } = await encryptData(reportJson, encKey);
+        if (reportAbortRef.current.cancelled) return;
 
         // Upload to server - only include encryptionKey if email notification is configured
         const { reportId, emailSent: wasEmailSent } = await api.uploadReport({
@@ -216,11 +224,16 @@ export default function AssignmentRunner() {
           ...(payload.notifyEmail && { encryptionKey: keyB64 }),
         });
 
+        // Don't update state if cancelled while upload was in progress
+        if (reportAbortRef.current.cancelled) return;
+
         const url = buildReportUrl(reportId, keyB64);
         setReportLink(url);
         setEmailSent(wasEmailSent || false);
         setState("results");
       } catch (linkError) {
+        // Don't show error if user cancelled
+        if (reportAbortRef.current.cancelled) return;
         // Report link generation failed, but results are available
         setError(linkError instanceof Error ? linkError.message : "Failed to generate report link");
         setState("results");
@@ -560,12 +573,15 @@ export default function AssignmentRunner() {
               </div>
               <div className="flex justify-center">
                 <Button variant="outline" onClick={() => {
-                  setError("Report link generation cancelled");
+                  reportAbortRef.current.cancelled = true;
                   setState("results");
                 }}>
-                  Cancel
+                  Skip
                 </Button>
               </div>
+              <p className="text-xs text-center text-muted-foreground">
+                Your results are ready - skip link generation to view them now
+              </p>
             </CardContent>
           </Card>
         )}
