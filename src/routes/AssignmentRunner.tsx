@@ -47,6 +47,7 @@ type RunnerState =
 export default function AssignmentRunner() {
   const { assignmentId } = useParams<{ assignmentId: string }>();
   const abortControllerRef = useRef<AbortController | null>(null);
+  const reportAbortRef = useRef<{ cancelled: boolean }>({ cancelled: false });
 
   const [state, setState] = useState<RunnerState>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -63,16 +64,25 @@ export default function AssignmentRunner() {
   const [emailSent, setEmailSent] = useState(false);
   const [countdown, setCountdown] = useState<string | null>(null);
 
+  // Validate and parse due date safely
+  const parsedDueDate = useMemo(() => {
+    if (!payload?.dueDate) return null;
+    const date = new Date(payload.dueDate);
+    // Check if date is valid (Invalid Date returns NaN for getTime())
+    if (isNaN(date.getTime())) return null;
+    return date;
+  }, [payload?.dueDate]);
+
   // Countdown timer for due date
   useEffect(() => {
-    if (!payload?.dueDate) {
+    if (!parsedDueDate) {
       setCountdown(null);
       return;
     }
 
     const updateCountdown = () => {
       const now = new Date().getTime();
-      const dueTime = new Date(payload.dueDate!).getTime();
+      const dueTime = parsedDueDate.getTime();
       const diff = dueTime - now;
       const absDiff = Math.abs(diff);
 
@@ -93,13 +103,13 @@ export default function AssignmentRunner() {
     updateCountdown();
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
-  }, [payload?.dueDate]);
+  }, [parsedDueDate]);
 
   // Determine if assignment is past due
   const isPastDue = useMemo(() => {
-    if (!payload?.dueDate) return false;
-    return new Date(payload.dueDate).getTime() < new Date().getTime();
-  }, [payload?.dueDate, countdown]); // countdown dependency ensures re-check
+    if (!parsedDueDate) return false;
+    return parsedDueDate.getTime() < new Date().getTime();
+  }, [parsedDueDate, countdown]); // countdown dependency ensures re-check
 
   // Fetch assignment from server (with signature verification)
   useEffect(() => {
@@ -151,18 +161,26 @@ export default function AssignmentRunner() {
     setReportLink(null);
     setEmailSent(false);
 
-    abortControllerRef.current = new AbortController();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
       const pipelineResult = await runPipeline(selectedFile, payload, {
         onProgress: setProgress,
-        signal: abortControllerRef.current.signal,
+        signal: controller.signal,
       });
+
+      // Check if aborted after await - ignore stale results
+      if (controller.signal.aborted) {
+        setState("uploading");
+        return;
+      }
 
       setResult(pipelineResult);
 
       // Auto-generate report link
       setState("generating_link");
+      reportAbortRef.current = { cancelled: false };
 
       try {
         const report: Report = {
@@ -184,9 +202,14 @@ export default function AssignmentRunner() {
         };
 
         const encKey = await generateEncryptionKey();
+        if (reportAbortRef.current.cancelled) return;
+
         const keyB64 = await exportKeyToBase64(encKey);
+        if (reportAbortRef.current.cancelled) return;
+
         const reportJson = JSON.stringify(report);
         const { ciphertextB64, nonceB64 } = await encryptData(reportJson, encKey);
+        if (reportAbortRef.current.cancelled) return;
 
         // Upload to server - only include encryptionKey if email notification is configured
         const { reportId, emailSent: wasEmailSent } = await api.uploadReport({
@@ -201,16 +224,26 @@ export default function AssignmentRunner() {
           ...(payload.notifyEmail && { encryptionKey: keyB64 }),
         });
 
+        // Don't update state if cancelled while upload was in progress
+        if (reportAbortRef.current.cancelled) return;
+
         const url = buildReportUrl(reportId, keyB64);
         setReportLink(url);
         setEmailSent(wasEmailSent || false);
         setState("results");
       } catch (linkError) {
+        // Don't show error if user cancelled
+        if (reportAbortRef.current.cancelled) return;
         // Report link generation failed, but results are available
         setError(linkError instanceof Error ? linkError.message : "Failed to generate report link");
         setState("results");
       }
     } catch (e) {
+      // Check if this controller was aborted (not a different one)
+      if (controller.signal.aborted) {
+        setState("uploading");
+        return;
+      }
       if (e instanceof Error && e.message === "Pipeline cancelled") {
         setState("uploading");
       } else {
@@ -280,9 +313,13 @@ export default function AssignmentRunner() {
 
   const copyReportLink = useCallback(async () => {
     if (!reportLink) return;
-    await navigator.clipboard.writeText(reportLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(reportLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Could not copy to clipboard. Please copy the link manually.");
+    }
   }, [reportLink]);
 
   const resetRunner = useCallback(() => {
@@ -442,7 +479,7 @@ export default function AssignmentRunner() {
               </>
             )}
 
-            {payload?.dueDate && countdown && (
+            {parsedDueDate && countdown && (
               <div className={`flex items-center gap-3 p-3 rounded-lg ${isPastDue ? "bg-destructive/10 border border-destructive/30" : "bg-muted/50"}`}>
                 <Clock className={`h-5 w-5 ${isPastDue ? "text-destructive" : "text-primary"}`} />
                 <div className="flex-1">
@@ -454,7 +491,7 @@ export default function AssignmentRunner() {
                   </p>
                 </div>
                 <div className="text-right text-sm text-muted-foreground">
-                  {new Date(payload.dueDate).toLocaleDateString(undefined, {
+                  {parsedDueDate.toLocaleDateString(undefined, {
                     weekday: "short",
                     month: "short",
                     day: "numeric",
@@ -530,10 +567,21 @@ export default function AssignmentRunner() {
               <CardTitle>Generating Report Link</CardTitle>
               <CardDescription>Encrypting and uploading your results...</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <div className="flex items-center justify-center py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
               </div>
+              <div className="flex justify-center">
+                <Button variant="outline" onClick={() => {
+                  reportAbortRef.current.cancelled = true;
+                  setState("results");
+                }}>
+                  Skip
+                </Button>
+              </div>
+              <p className="text-xs text-center text-muted-foreground">
+                Your results are ready - skip link generation to view them now
+              </p>
             </CardContent>
           </Card>
         )}

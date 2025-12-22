@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { Plus, Copy, Check, ChevronRight, CheckCircle2, Upload, Play, RotateCcw, ExternalLink, AlertTriangle, FileCheck, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,13 @@ import {
   buildReportUrl,
 } from "@/lib/crypto/encryption";
 import type { HandwritingStyle, PaperType, NumberingFormat, AssignmentPayload, PipelineProgress, Report, Finding } from "@/types";
+
+// Simple email validation regex
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidEmail(email: string): boolean {
+  return EMAIL_REGEX.test(email.trim());
+}
 
 export default function Home() {
   // Modal state
@@ -52,6 +59,14 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [notifyEmailEnabled, setNotifyEmailEnabled] = useState(false);
   const [notifyEmail, setNotifyEmail] = useState("");
+
+  // Email validation
+  const emailError = useMemo(() => {
+    if (!notifyEmailEnabled) return null;
+    if (!notifyEmail.trim()) return "Email is required";
+    if (!isValidEmail(notifyEmail)) return "Please enter a valid email address";
+    return null;
+  }, [notifyEmailEnabled, notifyEmail]);
 
   // ========== QUICK GRADE STATE ==========
   const [gradeLineCount, setGradeLineCount] = useState(5);
@@ -99,9 +114,14 @@ export default function Home() {
   const copyAssignmentLink = useCallback(async () => {
     if (!assignmentId) return;
     const url = `${window.location.origin}/a/${assignmentId}`;
-    await navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback: select the input text for manual copy
+      setCreateError("Could not copy to clipboard. Please copy the link manually.");
+    }
   }, [assignmentId]);
 
   const resetCreateWizard = () => {
@@ -146,7 +166,8 @@ export default function Home() {
     setGradeResult(null);
     setGradeError(null);
 
-    abortControllerRef.current = new AbortController();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     const lines = Array(gradeLineCount).fill(gradeExpectedText);
     const localPayload: AssignmentPayload = {
@@ -166,12 +187,23 @@ export default function Home() {
     try {
       const result = await runPipeline(gradeFile, localPayload, {
         onProgress: setGradeProgress,
-        signal: abortControllerRef.current.signal,
+        signal: controller.signal,
       });
+
+      // Check if aborted after await - ignore stale results
+      if (controller.signal.aborted) {
+        setGradeState("input");
+        return;
+      }
 
       setGradeResult(result);
       setGradeState("results");
     } catch (e) {
+      // Check if this controller was aborted (not a different one)
+      if (controller.signal.aborted) {
+        setGradeState("input");
+        return;
+      }
       if (e instanceof Error && e.message === "Pipeline cancelled") {
         setGradeState("input");
       } else {
@@ -235,9 +267,13 @@ export default function Home() {
 
   const copyReportLink = useCallback(async () => {
     if (!reportLink) return;
-    await navigator.clipboard.writeText(reportLink);
-    setReportCopied(true);
-    setTimeout(() => setReportCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(reportLink);
+      setReportCopied(true);
+      setTimeout(() => setReportCopied(false), 2000);
+    } catch {
+      setGradeError("Could not copy to clipboard. Please copy the link manually.");
+    }
   }, [reportLink]);
 
   const resetGrade = () => {
@@ -440,10 +476,15 @@ export default function Home() {
                       placeholder="teacher@school.edu"
                       value={notifyEmail}
                       onChange={(e) => setNotifyEmail(e.target.value)}
+                      className={emailError && notifyEmail.trim() ? "border-destructive" : ""}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Results will be emailed when student submits
-                    </p>
+                    {emailError && notifyEmail.trim() ? (
+                      <p className="text-xs text-destructive">{emailError}</p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Results will be emailed when student submits
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -457,7 +498,7 @@ export default function Home() {
               <div className="flex justify-end pt-2">
                 <Button
                   onClick={handleGenerateAssignment}
-                  disabled={isGenerating || !expectedText.trim() || (notifyEmailEnabled && !notifyEmail.trim())}
+                  disabled={isGenerating || !expectedText.trim() || !!emailError}
                 >
                   {isGenerating ? "Creating..." : "Create"}
                   <ChevronRight className="ml-2 h-4 w-4" />

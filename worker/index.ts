@@ -496,7 +496,8 @@ export default {
         // Log for debugging (visible in Cloudflare logs only)
         console.log("GET assignment request:", { assignmentId, pathname: url.pathname });
 
-        if (!/^[a-z0-9-]+$/i.test(assignmentId)) {
+        // Validate assignment ID format and length (max 100 chars to prevent abuse)
+        if (!/^[a-z0-9-]+$/i.test(assignmentId) || assignmentId.length > 100) {
           console.log("Invalid assignment ID format:", assignmentId);
           return Response.json(
             { error: "Invalid assignment ID format" },
@@ -667,8 +668,8 @@ export default {
       if (url.pathname.startsWith("/api/report/") && request.method === "GET") {
         const reportId = url.pathname.replace("/api/report/", "");
 
-        // Validate report ID format
-        if (!/^[a-z0-9-]+$/i.test(reportId)) {
+        // Validate report ID format and length (max 100 chars to prevent abuse)
+        if (!/^[a-z0-9-]+$/i.test(reportId) || reportId.length > 100) {
           return Response.json(
             { error: "Invalid report ID" },
             { status: 400, headers: corsHeaders }

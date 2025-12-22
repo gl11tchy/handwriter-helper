@@ -558,13 +558,20 @@ function assignWordsToLines(
   return results;
 }
 
+// OCR result type that tracks failures
+type OCRResult = {
+  lines: ExtractedLineWithChars[];
+  failed: boolean;
+  errorMessage?: string;
+};
+
 // OCR using Google Cloud Vision API
 async function performOCR(
   canvas: HTMLCanvasElement,
   lines: DetectedLine[],
   options: PipelineOptions,
   pageIndex: number = 0
-): Promise<ExtractedLineWithChars[]> {
+): Promise<OCRResult> {
   reportProgress(options, "ocr", "Sending to Cloud Vision...", 0);
 
   if (options.signal?.aborted) {
@@ -591,24 +598,29 @@ async function performOCR(
 
     reportProgress(options, "ocr", "OCR complete", 1);
 
-    return results;
+    return { lines: results, failed: false };
   } catch (err) {
     // Re-throw cancellation errors so pipeline actually stops
     if (err instanceof Error && err.message === "Pipeline cancelled") {
       throw err;
     }
 
+    const errorMessage = err instanceof Error ? err.message : "Unknown OCR error";
     console.error("Cloud Vision OCR failed:", err);
 
-    // Return empty results for all lines on failure
-    return lines.map((line, i) => ({
-      lineIndex: i,
-      text: "",
-      confidence: 0,
-      bbox: line.bbox,
-      characters: [],
-      pageIndex,
-    }));
+    // Return empty results with failure flag
+    return {
+      lines: lines.map((line, i) => ({
+        lineIndex: i,
+        text: "",
+        confidence: 0,
+        bbox: line.bbox,
+        characters: [],
+        pageIndex,
+      })),
+      failed: true,
+      errorMessage,
+    };
   }
 }
 
@@ -870,9 +882,19 @@ function computeQualityGate(
   extracted: ExtractedLine[],
   findings: Finding[],
   uncertainCount: number,
-  expectedLineCount: number
+  expectedLineCount: number,
+  ocrFailed: boolean = false,
+  ocrErrorMessage?: string
 ): QualityGate {
   const reasons: string[] = [];
+
+  // Check for OCR failure first - this is a critical error
+  if (ocrFailed) {
+    const errorDetail = ocrErrorMessage || "Text recognition service unavailable";
+    reasons.push(`OCR failed: ${errorDetail}`);
+    reasons.push("Please try again or check your internet connection.");
+    return { status: "ungradable", reasons, confidenceCoverage: 0 };
+  }
 
   // Check if we detected far fewer lines than expected (image too small)
   if (extracted.length < expectedLineCount * 0.5) {
@@ -1066,14 +1088,22 @@ export async function runPipeline(
 
   const allExtracted: ExtractedLineWithChars[] = [];
   let globalLineIndex = 0;
+  let ocrFailed = false;
+  let ocrErrorMessage: string | undefined;
 
   for (const pageData of allDetectedLines) {
     if (signal?.aborted) throw new Error("Pipeline cancelled");
 
-    const extracted = await performOCR(pageData.canvas, pageData.lines, options, pageData.pageIndex);
+    const ocrResult = await performOCR(pageData.canvas, pageData.lines, options, pageData.pageIndex);
+
+    // Track OCR failures
+    if (ocrResult.failed) {
+      ocrFailed = true;
+      ocrErrorMessage = ocrResult.errorMessage;
+    }
 
     // Adjust line indices to be global and add page index
-    for (const line of extracted) {
+    for (const line of ocrResult.lines) {
       allExtracted.push({
         ...line,
         lineIndex: globalLineIndex,
@@ -1136,7 +1166,9 @@ export async function runPipeline(
     allExtracted,
     allFindings,
     uncertainCount,
-    assignment.requiredLineCount
+    assignment.requiredLineCount,
+    ocrFailed,
+    ocrErrorMessage
   );
 
   // Step 8: Scoring

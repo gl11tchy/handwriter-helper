@@ -22,6 +22,63 @@ import type { Report, Finding } from "@/types";
 
 type ViewerState = "loading" | "error" | "ready";
 
+// Validate that the decrypted data has required Report fields
+function validateReport(data: unknown): Report {
+  if (!data || typeof data !== "object") {
+    throw new Error("Invalid report format: not an object");
+  }
+
+  const report = data as Record<string, unknown>;
+
+  // Check required fields exist
+  const requiredFields = [
+    "createdAt",
+    "assignmentPayload",
+    "inputFile",
+    "pages",
+    "extractedTextPerLine",
+    "detectedLineCount",
+    "quality",
+    "findings",
+    "score",
+  ];
+
+  for (const field of requiredFields) {
+    if (!(field in report)) {
+      throw new Error(`Invalid report format: missing "${field}" field`);
+    }
+  }
+
+  // Validate nested required fields
+  const payload = report.assignmentPayload as Record<string, unknown> | null;
+  if (!payload || typeof payload !== "object") {
+    throw new Error("Invalid report format: missing assignment payload");
+  }
+  if (!("expectedContent" in payload) || !("requiredLineCount" in payload)) {
+    throw new Error("Invalid report format: incomplete assignment payload");
+  }
+
+  const score = report.score as Record<string, unknown> | null;
+  if (!score || typeof score !== "object") {
+    throw new Error("Invalid report format: missing score data");
+  }
+
+  const quality = report.quality as Record<string, unknown> | null;
+  if (!quality || typeof quality !== "object") {
+    throw new Error("Invalid report format: missing quality data");
+  }
+
+  if (!Array.isArray(report.pages)) {
+    throw new Error("Invalid report format: pages must be an array");
+  }
+
+  if (!Array.isArray(report.findings)) {
+    throw new Error("Invalid report format: findings must be an array");
+  }
+
+  return data as Report;
+}
+
 export default function ReportViewer() {
   const { reportId } = useParams<{ reportId: string }>();
   const [state, setState] = useState<ViewerState>("loading");
@@ -55,7 +112,17 @@ export default function ReportViewer() {
 
         // Decrypt report
         const reportJson = await decryptData(ciphertextB64, nonceB64, key);
-        const reportData = JSON.parse(reportJson) as Report;
+
+        // Parse and validate JSON structure
+        let parsedData: unknown;
+        try {
+          parsedData = JSON.parse(reportJson);
+        } catch {
+          throw new Error("Failed to parse report data");
+        }
+
+        // Validate report structure before using
+        const reportData = validateReport(parsedData);
         reportData.reportId = reportId;
 
         setReport(reportData);
@@ -66,6 +133,8 @@ export default function ReportViewer() {
           setError("Report not found");
         } else if (e instanceof Error && e.message.includes("decrypt")) {
           setError("Failed to decrypt report. The link may be incomplete or corrupted.");
+        } else if (e instanceof Error && e.message.includes("Invalid report format")) {
+          setError("Report data is corrupted or in an incompatible format.");
         } else {
           setError(e instanceof Error ? e.message : "Failed to load report");
         }

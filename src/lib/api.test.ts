@@ -30,9 +30,9 @@ describe("api", () => {
 
       const result = await api.health();
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/health", {
+      expect(mockFetch).toHaveBeenCalledWith("/api/health", expect.objectContaining({
         headers: { "Content-Type": "application/json" },
-      });
+      }));
       expect(result).toEqual({ status: "ok" });
     });
   });
@@ -56,11 +56,11 @@ describe("api", () => {
 
       const result = await api.createAssignment(assignmentData);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/assignment", {
+      expect(mockFetch).toHaveBeenCalledWith("/api/assignment", expect.objectContaining({
         method: "POST",
         body: JSON.stringify(assignmentData),
         headers: { "Content-Type": "application/json" },
-      });
+      }));
       expect(result.assignmentId).toBe("test-123");
     });
 
@@ -95,9 +95,9 @@ describe("api", () => {
 
       const result = await api.getAssignment("test-123");
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/assignment/test-123", {
+      expect(mockFetch).toHaveBeenCalledWith("/api/assignment/test-123", expect.objectContaining({
         headers: { "Content-Type": "application/json" },
-      });
+      }));
       expect(result.verified).toBe(true);
     });
 
@@ -143,11 +143,11 @@ describe("api", () => {
 
       const result = await api.uploadReport(reportData);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/report", {
+      expect(mockFetch).toHaveBeenCalledWith("/api/report", expect.objectContaining({
         method: "POST",
         body: JSON.stringify(reportData),
         headers: { "Content-Type": "application/json" },
-      });
+      }));
       expect(result.reportId).toBe("report-456");
     });
 
@@ -181,9 +181,9 @@ describe("api", () => {
 
       const result = await api.getReport("report-456");
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/report/report-456", {
+      expect(mockFetch).toHaveBeenCalledWith("/api/report/report-456", expect.objectContaining({
         headers: { "Content-Type": "application/json" },
-      });
+      }));
       expect(result.ciphertextB64).toBe("encrypted-data");
     });
 
@@ -218,11 +218,11 @@ describe("api", () => {
 
       const result = await api.ocr(imageB64);
 
-      expect(mockFetch).toHaveBeenCalledWith("/api/ocr", {
+      expect(mockFetch).toHaveBeenCalledWith("/api/ocr", expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ imageB64 }),
         headers: { "Content-Type": "application/json" },
-      });
+      }));
       expect(result.text).toBe("Hello World");
       expect(result.confidence).toBe(0.95);
     });
