@@ -158,7 +158,7 @@ describe("computeQualityGate", () => {
     expect(result.reasons[0]).toContain("could be verified");
   });
 
-  it("returns 'ungradable' when uncertainty is too high", () => {
+  it("returns 'uncertain' (not ungradable) when uncertainty is high to allow partial scoring", () => {
     const extracted: ExtractedLine[] = [
       createExtractedLine(0, 0.9),
       createExtractedLine(1, 0.9),
@@ -168,10 +168,11 @@ describe("computeQualityGate", () => {
     ];
     const findings: Finding[] = [];
 
-    // More than 40% uncertain
+    // More than 40% uncertain - should still return "uncertain" (not "ungradable")
+    // to allow partial scoring, especially for cursive handwriting
     const result = computeQualityGate(extracted, findings, 3, 5);
 
-    expect(result.status).toBe("ungradable");
+    expect(result.status).toBe("uncertain");
     expect(result.reasons[0]).toContain("uncertain verification");
   });
 
