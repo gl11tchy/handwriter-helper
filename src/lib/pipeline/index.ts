@@ -917,9 +917,15 @@ function computeQualityGate(
     return { status: "ungradable", reasons, confidenceCoverage };
   }
 
+  // High uncertainty should show a warning but NOT zero out scores
+  // Reserve "ungradable" status for actual failures (OCR error, no lines detected, etc.)
+  // Previously this would mark as "ungradable" at 40% uncertainty, which was too strict
+  // especially for cursive handwriting that OCR struggles with
   if (uncertainCount > expectedLineCount * 0.4) {
     reasons.push(`${uncertainCount} of ${expectedLineCount} lines have uncertain verification`);
-    return { status: "ungradable", reasons, confidenceCoverage };
+    // Return "uncertain" instead of "ungradable" - scores will still be calculated
+    // but the user will see a warning about verification uncertainty
+    return { status: "uncertain", reasons, confidenceCoverage };
   }
 
   // Check for uncertain status
