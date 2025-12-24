@@ -14,6 +14,8 @@ import type {
   ScoreBreakdown,
   DetectedLine,
   ImageQualityMetrics,
+  OCRConfidenceMetrics,
+  LineConfidenceRecord,
 } from "@/types";
 
 // Lazy-loaded PDF.js module (only loaded when needed)
@@ -59,6 +61,7 @@ export type PipelineResult = {
   quality: QualityGate;
   findings: Finding[];
   score: ScoreBreakdown;
+  confidenceMetrics?: OCRConfidenceMetrics; // For threshold tuning analysis
 };
 
 export type PipelineOptions = {
@@ -77,12 +80,13 @@ const PIPELINE_STEPS: PipelineStep[] = [
   "score",
 ];
 
-// Thresholds for conservative detection
-const OCR_HIGH_CONFIDENCE = 0.85; // Only flag mismatches above this
-const FINDING_CONFIDENCE_THRESHOLD = 0.92; // Very high threshold for findings
-const QUALITY_COVERAGE_MIN = 0.6; // Min coverage for gradable results
-const LINE_CONFIDENCE_UNCERTAIN = 0.7; // Below this, mark as uncertain
-const HANDWRITING_CONFIDENCE_THRESHOLD = 0.95; // Extra high for handwriting findings
+// Thresholds tuned for handwriting recognition
+// Handwriting typically yields lower OCR confidence than printed text (0.5-0.8 range)
+const OCR_HIGH_CONFIDENCE = 0.70; // Lower threshold to trust handwriting OCR readings
+const FINDING_CONFIDENCE_THRESHOLD = 0.75; // More reasonable threshold for findings
+const QUALITY_COVERAGE_MIN = 0.50; // Accept more variation in handwriting quality
+const LINE_CONFIDENCE_UNCERTAIN = 0.55; // Handwriting often has moderate confidence
+const HANDWRITING_CONFIDENCE_THRESHOLD = 0.85; // Slightly lower for i-dots/t-crosses
 
 // Auto-preprocessing thresholds
 const MIN_CONTRAST_THRESHOLD = 0.3; // Below this, auto-enhance
@@ -625,12 +629,14 @@ async function performOCR(
 }
 
 // Verify content against expected text using real comparison
+// Also collects confidence metrics for threshold tuning analysis
 function verifyContent(
   extracted: ExtractedLine[],
   expected: string[],
   _assignment: AssignmentPayload
-): { findings: Finding[]; uncertainCount: number } {
+): { findings: Finding[]; uncertainCount: number; lineMetrics: LineConfidenceRecord[] } {
   const findings: Finding[] = [];
+  const lineMetrics: LineConfidenceRecord[] = [];
   let uncertainCount = 0;
 
   for (let i = 0; i < expected.length; i++) {
@@ -650,8 +656,21 @@ function verifyContent(
         confidence: 0.99,
         message: `Line ${i + 1} is missing`,
       });
+      lineMetrics.push({
+        lineIndex: i,
+        ocrConfidence: 0,
+        similarity: 0,
+        findingConfidence: 0.99,
+        decision: "mismatch",
+        expectedText,
+        observedText: "",
+      });
       continue;
     }
+
+    // Calculate similarity for all lines (needed for metrics)
+    const similarity = calculateSimilarity(extractedLine.text, expectedText);
+    const findingConfidence = extractedLine.confidence * (1 - similarity);
 
     // Check confidence threshold - if OCR confidence is too low, mark as uncertain
     if (extractedLine.confidence < LINE_CONFIDENCE_UNCERTAIN) {
@@ -666,12 +685,18 @@ function verifyContent(
         confidence: extractedLine.confidence,
         message: `Line ${i + 1}: Unable to verify - image quality or OCR confidence too low`,
       });
+      lineMetrics.push({
+        lineIndex: i,
+        ocrConfidence: extractedLine.confidence,
+        similarity,
+        findingConfidence,
+        decision: "uncertain",
+        expectedText,
+        observedText: extractedLine.text,
+      });
       uncertainCount++;
       continue;
     }
-
-    // Calculate similarity between expected and extracted text
-    const similarity = calculateSimilarity(extractedLine.text, expectedText);
 
     // Only flag mismatch if:
     // 1. OCR confidence is high enough to trust the reading
@@ -680,12 +705,17 @@ function verifyContent(
     if (extractedLine.confidence >= OCR_HIGH_CONFIDENCE) {
       if (similarity >= 0.9) {
         // Good match - no finding needed
+        lineMetrics.push({
+          lineIndex: i,
+          ocrConfidence: extractedLine.confidence,
+          similarity,
+          findingConfidence,
+          decision: "verified",
+          expectedText,
+          observedText: extractedLine.text,
+        });
         continue;
       }
-
-      // Calculate combined confidence for this finding
-      // Higher OCR confidence + lower similarity = more confident mismatch
-      const findingConfidence = extractedLine.confidence * (1 - similarity);
 
       if (findingConfidence >= FINDING_CONFIDENCE_THRESHOLD && similarity < 0.7) {
         // Definite mismatch with high confidence
@@ -700,6 +730,15 @@ function verifyContent(
           confidence: findingConfidence,
           message: `Line ${i + 1}: Content does not match expected text (${Math.round(similarity * 100)}% similar)`,
         });
+        lineMetrics.push({
+          lineIndex: i,
+          ocrConfidence: extractedLine.confidence,
+          similarity,
+          findingConfidence,
+          decision: "mismatch",
+          expectedText,
+          observedText: extractedLine.text,
+        });
       } else {
         // Moderate similarity - mark as uncertain to avoid false positives
         findings.push({
@@ -712,6 +751,15 @@ function verifyContent(
           observedText: extractedLine.text,
           confidence: extractedLine.confidence,
           message: `Line ${i + 1}: Content verification uncertain (${Math.round(similarity * 100)}% similar)`,
+        });
+        lineMetrics.push({
+          lineIndex: i,
+          ocrConfidence: extractedLine.confidence,
+          similarity,
+          findingConfidence,
+          decision: "uncertain",
+          expectedText,
+          observedText: extractedLine.text,
         });
         uncertainCount++;
       }
@@ -728,11 +776,20 @@ function verifyContent(
         confidence: extractedLine.confidence,
         message: `Line ${i + 1}: Verification uncertain due to moderate OCR confidence`,
       });
+      lineMetrics.push({
+        lineIndex: i,
+        ocrConfidence: extractedLine.confidence,
+        similarity,
+        findingConfidence,
+        decision: "uncertain",
+        expectedText,
+        observedText: extractedLine.text,
+      });
       uncertainCount++;
     }
   }
 
-  return { findings, uncertainCount };
+  return { findings, uncertainCount, lineMetrics };
 }
 
 // Check handwriting mechanics (i dots, t crosses)
@@ -1128,7 +1185,7 @@ export async function runPipeline(
   reportProgress(options, "verify_content", "Verifying content...");
   if (signal?.aborted) throw new Error("Pipeline cancelled");
 
-  const { findings: contentFindings, uncertainCount } = verifyContent(
+  const { findings: contentFindings, uncertainCount, lineMetrics } = verifyContent(
     allExtracted,
     assignment.expectedContent.lines,
     assignment
@@ -1192,6 +1249,54 @@ export async function runPipeline(
     progress: 1,
   });
 
+  // Build confidence metrics for threshold tuning analysis
+  const ocrConfidences = lineMetrics.map((m) => m.ocrConfidence);
+  const similarities = lineMetrics.map((m) => m.similarity);
+
+  const confidenceMetrics: OCRConfidenceMetrics = {
+    timestamp: new Date().toISOString(),
+    totalLines: lineMetrics.length,
+    lineMetrics,
+    summary: {
+      avgOcrConfidence: ocrConfidences.length > 0
+        ? ocrConfidences.reduce((a, b) => a + b, 0) / ocrConfidences.length
+        : 0,
+      minOcrConfidence: ocrConfidences.length > 0 ? Math.min(...ocrConfidences) : 0,
+      maxOcrConfidence: ocrConfidences.length > 0 ? Math.max(...ocrConfidences) : 0,
+      avgSimilarity: similarities.length > 0
+        ? similarities.reduce((a, b) => a + b, 0) / similarities.length
+        : 0,
+      verifiedCount: lineMetrics.filter((m) => m.decision === "verified").length,
+      uncertainCount: lineMetrics.filter((m) => m.decision === "uncertain").length,
+      mismatchCount: lineMetrics.filter((m) => m.decision === "mismatch").length,
+    },
+    thresholdsUsed: {
+      LINE_CONFIDENCE_UNCERTAIN,
+      OCR_HIGH_CONFIDENCE,
+      FINDING_CONFIDENCE_THRESHOLD,
+    },
+  };
+
+  // Debug logging for threshold tuning - only in development mode
+  if (import.meta.env.DEV) {
+    console.group("OCR Confidence Metrics (for threshold tuning)");
+    console.log("Thresholds used:", confidenceMetrics.thresholdsUsed);
+    console.log("Summary:", confidenceMetrics.summary);
+    console.table(lineMetrics.map((m) => ({
+      line: m.lineIndex + 1,
+      ocrConf: (m.ocrConfidence * 100).toFixed(1) + "%",
+      similarity: (m.similarity * 100).toFixed(1) + "%",
+      findingConf: (m.findingConfidence * 100).toFixed(1) + "%",
+      decision: m.decision,
+    })));
+    console.groupEnd();
+
+    // Store in window for easy export from console
+    if (typeof window !== "undefined") {
+      (window as Window & { __lastOcrMetrics?: OCRConfidenceMetrics }).__lastOcrMetrics = confidenceMetrics;
+    }
+  }
+
   return {
     pages: pageDataResults,
     extractedTextPerLine: allExtracted.map(({ characters: _characters, ...rest }) => rest),
@@ -1201,5 +1306,6 @@ export async function runPipeline(
       (f) => f.type !== "content_uncertain" || quality.status !== "ungradable"
     ),
     score,
+    confidenceMetrics,
   };
 }
