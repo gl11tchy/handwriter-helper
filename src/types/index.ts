@@ -188,3 +188,37 @@ export type GetReportResponse = {
 // ============================================
 
 export type Theme = "light" | "dark" | "system";
+
+// ============================================
+// OCR Confidence Metrics (for threshold tuning)
+// ============================================
+
+export type LineConfidenceRecord = {
+  lineIndex: number;
+  ocrConfidence: number;
+  similarity: number;
+  findingConfidence: number;
+  decision: "verified" | "uncertain" | "mismatch";
+  expectedText: string;
+  observedText: string;
+};
+
+export type OCRConfidenceMetrics = {
+  timestamp: string;
+  totalLines: number;
+  lineMetrics: LineConfidenceRecord[];
+  summary: {
+    avgOcrConfidence: number;
+    minOcrConfidence: number;
+    maxOcrConfidence: number;
+    avgSimilarity: number;
+    verifiedCount: number;
+    uncertainCount: number;
+    mismatchCount: number;
+  };
+  thresholdsUsed: {
+    LINE_CONFIDENCE_UNCERTAIN: number;
+    OCR_HIGH_CONFIDENCE: number;
+    FINDING_CONFIDENCE_THRESHOLD: number;
+  };
+};
