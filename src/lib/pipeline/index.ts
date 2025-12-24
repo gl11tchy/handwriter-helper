@@ -1277,25 +1277,24 @@ export async function runPipeline(
     },
   };
 
-  // Log metrics for threshold tuning (can be collected from browser console)
-  console.group("📊 OCR Confidence Metrics (for threshold tuning)");
-  console.log("Thresholds used:", confidenceMetrics.thresholdsUsed);
-  console.log("Summary:", confidenceMetrics.summary);
-  console.table(lineMetrics.map((m) => ({
-    line: m.lineIndex + 1,
-    ocrConf: (m.ocrConfidence * 100).toFixed(1) + "%",
-    similarity: (m.similarity * 100).toFixed(1) + "%",
-    findingConf: (m.findingConfidence * 100).toFixed(1) + "%",
-    decision: m.decision,
-    expected: m.expectedText.substring(0, 30) + (m.expectedText.length > 30 ? "..." : ""),
-    observed: m.observedText.substring(0, 30) + (m.observedText.length > 30 ? "..." : ""),
-  })));
-  console.log("💡 To export: copy(JSON.stringify(window.__lastOcrMetrics, null, 2))");
-  console.groupEnd();
+  // Debug logging for threshold tuning - only in development mode
+  if (import.meta.env.DEV) {
+    console.group("OCR Confidence Metrics (for threshold tuning)");
+    console.log("Thresholds used:", confidenceMetrics.thresholdsUsed);
+    console.log("Summary:", confidenceMetrics.summary);
+    console.table(lineMetrics.map((m) => ({
+      line: m.lineIndex + 1,
+      ocrConf: (m.ocrConfidence * 100).toFixed(1) + "%",
+      similarity: (m.similarity * 100).toFixed(1) + "%",
+      findingConf: (m.findingConfidence * 100).toFixed(1) + "%",
+      decision: m.decision,
+    })));
+    console.groupEnd();
 
-  // Store in window for easy export from console
-  if (typeof window !== "undefined") {
-    (window as Window & { __lastOcrMetrics?: OCRConfidenceMetrics }).__lastOcrMetrics = confidenceMetrics;
+    // Store in window for easy export from console
+    if (typeof window !== "undefined") {
+      (window as Window & { __lastOcrMetrics?: OCRConfidenceMetrics }).__lastOcrMetrics = confidenceMetrics;
+    }
   }
 
   return {
