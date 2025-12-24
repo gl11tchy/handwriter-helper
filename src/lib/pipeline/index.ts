@@ -77,12 +77,13 @@ const PIPELINE_STEPS: PipelineStep[] = [
   "score",
 ];
 
-// Thresholds for conservative detection
-const OCR_HIGH_CONFIDENCE = 0.85; // Only flag mismatches above this
-const FINDING_CONFIDENCE_THRESHOLD = 0.92; // Very high threshold for findings
-const QUALITY_COVERAGE_MIN = 0.6; // Min coverage for gradable results
-const LINE_CONFIDENCE_UNCERTAIN = 0.7; // Below this, mark as uncertain
-const HANDWRITING_CONFIDENCE_THRESHOLD = 0.95; // Extra high for handwriting findings
+// Thresholds tuned for handwriting recognition
+// Handwriting typically yields lower OCR confidence than printed text (0.5-0.8 range)
+const OCR_HIGH_CONFIDENCE = 0.70; // Lower threshold to trust handwriting OCR readings
+const FINDING_CONFIDENCE_THRESHOLD = 0.75; // More reasonable threshold for findings
+const QUALITY_COVERAGE_MIN = 0.50; // Accept more variation in handwriting quality
+const LINE_CONFIDENCE_UNCERTAIN = 0.55; // Handwriting often has moderate confidence
+const HANDWRITING_CONFIDENCE_THRESHOLD = 0.85; // Slightly lower for i-dots/t-crosses
 
 // Auto-preprocessing thresholds
 const MIN_CONTRAST_THRESHOLD = 0.3; // Below this, auto-enhance
