@@ -220,7 +220,7 @@ export default function AssignmentRunner() {
             size: ciphertextB64.length,
           },
           assignmentId,
-          // Only send key to server if teacher configured email notification
+          // Only send key to server if email notification is configured
           ...(payload.notifyEmail && { encryptionKey: keyB64 }),
         });
 
@@ -296,7 +296,7 @@ export default function AssignmentRunner() {
           size: ciphertextB64.length,
         },
         assignmentId,
-        // Only send key to server if teacher configured email notification
+        // Only send key to server if email notification is configured
         ...(payload.notifyEmail && { encryptionKey: keyB64 }),
       });
 
@@ -389,7 +389,7 @@ export default function AssignmentRunner() {
                 <ShieldAlert className="h-4 w-4" />
                 <AlertTitle>Security Warning</AlertTitle>
                 <AlertDescription>
-                  This assignment could not be verified. Please request a new link from your teacher.
+                  This assignment could not be verified. Please request a new link.
                 </AlertDescription>
               </Alert>
               <div className="flex justify-center">
@@ -600,7 +600,7 @@ export default function AssignmentRunner() {
                     <CardTitle>Report Link Ready</CardTitle>
                   </div>
                   <CardDescription>
-                    Share this link with your teacher to view your results
+                    Save or share this link to view results
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -609,7 +609,7 @@ export default function AssignmentRunner() {
                       <Mail className="h-4 w-4 text-green-600" />
                       <AlertTitle className="text-green-600">Email Sent</AlertTitle>
                       <AlertDescription>
-                        Your teacher has been notified by email with the report link.
+                        Notification sent with the report link.
                       </AlertDescription>
                     </Alert>
                   )}

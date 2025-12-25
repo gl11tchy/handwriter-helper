@@ -20,7 +20,7 @@ npx wrangler deploy
 
 ## Architecture
 
-**Handwriter Helper** (writinglines.com) grades handwritten assignments using OCR. Teachers create assignments with expected content, students upload handwritten PDFs/images, and the system grades completeness, content accuracy, and handwriting quality.
+**Writing Lines** (writinglines.com) grades handwritten line assignments using OCR. Create assignments with expected text and repetition count, then submit handwritten PDFs/images for grading on completeness, content accuracy, and handwriting quality.
 
 ### Stack
 - **Frontend**: React 19 + TypeScript + Tailwind CSS 4 + Vite

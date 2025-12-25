@@ -121,7 +121,7 @@ async function sendResultsEmail(
         subject: "Assignment Results Submitted",
         html: `
           <h2>Assignment Results Ready</h2>
-          <p>A student has submitted their handwriting assignment.</p>
+          <p>A line writing assignment has been submitted.</p>
           <p><strong>Assignment:</strong> "${escapedText}"</p>
           <p><a href="${reportUrl}" style="display: inline-block; padding: 12px 24px; background-color: #d4af37; color: #000; text-decoration: none; border-radius: 6px; font-weight: bold;">View Results</a></p>
           <p style="color: #666; font-size: 14px; margin-top: 20px;">This link contains the encryption key needed to view the report. Keep it safe.</p>
@@ -563,7 +563,7 @@ export default {
         } catch (verifyError) {
           console.error("Signature verification error:", verifyError);
           return Response.json(
-            { error: "This assignment link is invalid or has been modified. Please request a new link from your teacher.", tampered: true },
+            { error: "This assignment link is invalid or has been modified. Please request a new link.", tampered: true },
             { status: 403, headers: corsHeaders }
           );
         }
@@ -571,7 +571,7 @@ export default {
         if (!valid) {
           console.log("Signature verification failed - tampered data");
           return Response.json(
-            { error: "This assignment link is invalid or has been modified. Please request a new link from your teacher.", tampered: true },
+            { error: "This assignment link is invalid or has been modified. Please request a new link.", tampered: true },
             { status: 403, headers: corsHeaders }
           );
         }

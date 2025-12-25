@@ -338,7 +338,7 @@ export default function Home() {
             </DialogTitle>
             <DialogDescription>
               {wizardStep === 1 && "Enter the text and how many times it should be written"}
-              {wizardStep === 2 && "Share this link with students"}
+              {wizardStep === 2 && "Share this assignment link"}
             </DialogDescription>
           </DialogHeader>
 
@@ -349,7 +349,7 @@ export default function Home() {
                 <Textarea
                   value={expectedText}
                   onChange={(e) => setExpectedText(e.target.value)}
-                  placeholder="e.g., I will not talk in class"
+                  placeholder="e.g., I will obey the rules"
                   className="min-h-[80px]"
                 />
               </div>
@@ -473,7 +473,7 @@ export default function Home() {
                     <Input
                       id="notifyEmail"
                       type="email"
-                      placeholder="teacher@school.edu"
+                      placeholder="notify@example.com"
                       value={notifyEmail}
                       onChange={(e) => setNotifyEmail(e.target.value)}
                       className={emailError && notifyEmail.trim() ? "border-destructive" : ""}
@@ -482,7 +482,7 @@ export default function Home() {
                       <p className="text-xs text-destructive">{emailError}</p>
                     ) : (
                       <p className="text-xs text-muted-foreground">
-                        Results will be emailed when student submits
+                        Results will be emailed when submitted
                       </p>
                     )}
                   </div>
@@ -560,7 +560,7 @@ export default function Home() {
                 <Textarea
                   value={gradeExpectedText}
                   onChange={(e) => setGradeExpectedText(e.target.value)}
-                  placeholder="e.g., I will not talk in class"
+                  placeholder="e.g., I will obey the rules"
                   className="min-h-[80px]"
                 />
               </div>

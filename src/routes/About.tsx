@@ -8,7 +8,7 @@ export default function About() {
           <h2 className="font-semibold mb-2">What this does</h2>
           <p className="text-muted-foreground">
             Checks handwritten work against expected text using OCR.
-            Teachers can create shareable assignment links or grade papers directly.
+            Create shareable assignment links or grade submissions directly.
           </p>
         </section>
 
