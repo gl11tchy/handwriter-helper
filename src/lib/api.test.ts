@@ -248,6 +248,70 @@ describe("api", () => {
     });
   });
 
+  describe("verifyWithClaude", () => {
+    it("calls /api/verify-with-claude with POST method", async () => {
+      const requestData = {
+        imageB64: "base64-image-data",
+        expectedText: "Hello World",
+        lineIndex: 0,
+      };
+      const responseData = {
+        transcription: "Hello World",
+        matchesExpected: true,
+        confidence: "high" as const,
+      };
+
+      mockFetch.mockResolvedValue(createMockResponse(responseData));
+
+      const result = await api.verifyWithClaude(requestData);
+
+      expect(mockFetch).toHaveBeenCalledWith("/api/verify-with-claude", expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(requestData),
+        headers: { "Content-Type": "application/json" },
+      }));
+      expect(result.transcription).toBe("Hello World");
+      expect(result.matchesExpected).toBe(true);
+      expect(result.confidence).toBe("high");
+    });
+
+    it("throws error when Claude API is unavailable", async () => {
+      mockFetch.mockResolvedValue(
+        createMockResponse({ error: "Claude verification service not configured" }, false, 503)
+      );
+
+      await expect(api.verifyWithClaude({
+        imageB64: "image-data",
+        expectedText: "Test",
+        lineIndex: 0,
+      })).rejects.toThrow("Claude verification service not configured");
+    });
+
+    it("throws error for missing required fields", async () => {
+      mockFetch.mockResolvedValue(
+        createMockResponse({ error: "Missing required fields" }, false, 400)
+      );
+
+      await expect(api.verifyWithClaude({
+        imageB64: "",
+        expectedText: "",
+        lineIndex: 0,
+      })).rejects.toThrow("Missing required fields");
+    });
+
+    it("handles Claude API errors gracefully", async () => {
+      mockFetch.mockResolvedValue(
+        createMockResponse({ error: "Claude API error: rate limit exceeded" }, false, 500)
+      );
+
+      await expect(api.verifyWithClaude({
+        imageB64: "image-data",
+        expectedText: "Test",
+        lineIndex: 0,
+      })).rejects.toThrow("Claude API error");
+    });
+  });
+
   describe("error handling", () => {
     it("handles network errors gracefully", async () => {
       mockFetch.mockRejectedValue(new Error("Network error"));

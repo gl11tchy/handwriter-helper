@@ -1,4 +1,4 @@
-import type { UploadReportRequest, UploadReportResponse, GetReportResponse, AssignmentPayload } from "@/types";
+import type { UploadReportRequest, UploadReportResponse, GetReportResponse, AssignmentPayload, ClaudeVerificationRequest, ClaudeVerificationResponse } from "@/types";
 
 const API_BASE = "";
 
@@ -139,5 +139,12 @@ export const api = {
     request<OcrResponse>("/api/ocr", {
       method: "POST",
       body: JSON.stringify({ imageB64 }),
+    }),
+
+  // Claude Vision verification for uncertain OCR results
+  verifyWithClaude: (data: ClaudeVerificationRequest) =>
+    request<ClaudeVerificationResponse>("/api/verify-with-claude", {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
 };

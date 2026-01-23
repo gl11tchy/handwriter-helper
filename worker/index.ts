@@ -244,6 +244,163 @@ interface OcrResult {
   }>;
 }
 
+// Claude Vision verification types
+interface ClaudeVerificationRequest {
+  imageB64: string;
+  expectedText: string;
+  lineIndex: number;
+}
+
+interface ClaudeVerificationResponse {
+  transcription: string;
+  matchesExpected: boolean;
+  confidence: "high" | "medium" | "low";
+  reasoning?: string;
+}
+
+interface AnthropicResponse {
+  content: Array<{
+    type: "text";
+    text: string;
+  }>;
+  stop_reason: string;
+}
+
+// Call Claude Vision API to verify handwritten text
+async function callClaudeVision(
+  imageB64: string,
+  expectedText: string,
+  apiKey: string
+): Promise<ClaudeVerificationResponse> {
+  const prompt = `You are analyzing a cropped image of a single handwritten line from a writing assignment.
+
+Expected text: "${expectedText}"
+
+Please:
+1. Transcribe exactly what you see written in the image
+2. Compare your transcription to the expected text
+3. Determine if they match (allowing for minor variations in handwriting)
+
+Respond ONLY with valid JSON in this exact format, no other text:
+{
+  "transcription": "what you read",
+  "matchesExpected": true,
+  "confidence": "high",
+  "reasoning": "brief explanation if not a match"
+}
+
+The confidence field must be one of: "high", "medium", or "low".
+The matchesExpected field must be true or false.
+If the handwriting matches the expected text (allowing for minor handwriting variations), set matchesExpected to true.`;
+
+  // Detect MIME type from base64 data
+  const detectMimeType = (b64: string): string => {
+    // Check for data URL prefix
+    if (b64.startsWith("data:")) {
+      const match = b64.match(/^data:([^;]+);base64,/);
+      if (match) return match[1];
+    }
+    // Infer from base64 header bytes (first few characters encode magic bytes)
+    // PNG: iVBORw0KGgo (base64 of 0x89 0x50 0x4E 0x47)
+    // JPEG: /9j/ (base64 of 0xFF 0xD8 0xFF)
+    // GIF: R0lGOD (base64 of GIF87a or GIF89a)
+    // WebP: UklGR (base64 of RIFF header)
+    if (b64.startsWith("iVBORw")) return "image/png";
+    if (b64.startsWith("/9j/")) return "image/jpeg";
+    if (b64.startsWith("R0lGOD")) return "image/gif";
+    if (b64.startsWith("UklGR")) return "image/webp";
+    // Default to JPEG for unknown formats
+    return "image/jpeg";
+  };
+
+  // Strip data URL prefix if present
+  const cleanB64 = imageB64.includes(",") ? imageB64.split(",")[1] : imageB64;
+  const mediaType = detectMimeType(imageB64);
+
+  // Set up timeout with AbortController
+  const CLAUDE_API_TIMEOUT = 15000; // 15 seconds
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CLAUDE_API_TIMEOUT);
+
+  let response: Response;
+  try {
+    response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: "claude-3-5-haiku-20241022",
+        max_tokens: 256,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  media_type: mediaType,
+                  data: cleanB64,
+                },
+              },
+              {
+                type: "text",
+                text: prompt,
+              },
+            ],
+          },
+        ],
+      }),
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`Anthropic API timeout after ${CLAUDE_API_TIMEOUT}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Anthropic API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json() as AnthropicResponse;
+
+  if (!data.content || data.content.length === 0) {
+    throw new Error("Anthropic API returned empty response");
+  }
+
+  const textContent = data.content.find(c => c.type === "text");
+  if (!textContent) {
+    throw new Error("Anthropic API returned no text content");
+  }
+
+  // Parse the JSON response from Claude
+  try {
+    const parsed = JSON.parse(textContent.text) as ClaudeVerificationResponse;
+
+    // Validate the response structure
+    if (typeof parsed.transcription !== "string" ||
+        typeof parsed.matchesExpected !== "boolean" ||
+        !["high", "medium", "low"].includes(parsed.confidence)) {
+      throw new Error("Invalid response structure from Claude");
+    }
+
+    return parsed;
+  } catch {
+    // If Claude didn't return valid JSON, try to extract what we can
+    console.error("Failed to parse Claude response:", textContent.text);
+    throw new Error("Failed to parse Claude response as JSON");
+  }
+}
+
 function verticesToBbox(vertices: Array<{ x: number; y: number }> | undefined): { x: number; y: number; w: number; h: number } {
   if (!vertices || vertices.length < 4) {
     return { x: 0, y: 0, w: 0, h: 0 };
@@ -429,6 +586,58 @@ export default {
           console.error("OCR error:", error);
           return Response.json(
             { error: error instanceof Error ? error.message : "OCR processing failed" },
+            { status: 500, headers: corsHeaders }
+          );
+        }
+      }
+
+      // Claude Vision verification endpoint - for uncertain OCR results
+      if (url.pathname === "/api/verify-with-claude" && request.method === "POST") {
+        // Check content length (images can be large)
+        const contentLengthHeader = request.headers.get("Content-Length");
+        if (!contentLengthHeader) {
+          return Response.json(
+            { error: "Content-Length header is required" },
+            { status: 411, headers: corsHeaders }
+          );
+        }
+        const contentLength = Number(contentLengthHeader);
+        if (!Number.isFinite(contentLength) || contentLength < 0) {
+          return Response.json(
+            { error: "Content-Length header must be a valid non-negative number" },
+            { status: 400, headers: corsHeaders }
+          );
+        }
+        if (contentLength > MAX_PAYLOAD_SIZE) {
+          return Response.json(
+            { error: `Payload too large. Maximum size is ${MAX_PAYLOAD_SIZE / (1024 * 1024)}MB.` },
+            { status: 413, headers: corsHeaders }
+          );
+        }
+
+        if (!env.ANTHROPIC_API_KEY) {
+          return Response.json(
+            { error: "Claude verification service not configured" },
+            { status: 503, headers: corsHeaders }
+          );
+        }
+
+        const body = await request.json() as ClaudeVerificationRequest;
+
+        if (!body.imageB64 || !body.expectedText) {
+          return Response.json(
+            { error: "Missing required fields: imageB64 and expectedText are required" },
+            { status: 400, headers: corsHeaders }
+          );
+        }
+
+        try {
+          const result = await callClaudeVision(body.imageB64, body.expectedText, env.ANTHROPIC_API_KEY);
+          return Response.json(result, { headers: corsHeaders });
+        } catch (error) {
+          console.error("Claude verification error:", error);
+          return Response.json(
+            { error: error instanceof Error ? error.message : "Claude verification failed" },
             { status: 500, headers: corsHeaders }
           );
         }
