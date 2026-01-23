@@ -935,7 +935,7 @@ async function verifyUncertainLinesWithClaude(
               ...updatedFindings[findingIndex],
               type: "content_mismatch",
               observedText: response.transcription,
-              confidence: claudeConfidence,
+              confidence: claudeFindingConfidence,
               message: `Line ${lineIndex + 1}: Content mismatch confirmed by Claude - "${response.transcription}" (${Math.round(claudeSimilarity * 100)}% similar, ${response.reasoning || "does not match expected text"})`,
             };
           }
