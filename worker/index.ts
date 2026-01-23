@@ -263,10 +263,13 @@ async function callGoogleVisionOCR(imageB64: string, apiKey: string): Promise<Oc
       {
         image: { content: imageB64 },
         features: [
-          { type: "DOCUMENT_TEXT_DETECTION", maxResults: 1 }
+          { type: "DOCUMENT_TEXT_DETECTION" }
         ],
         imageContext: {
-          languageHints: ["en"]
+          // Per Google docs: "With the release of Handwriting OCR GA, images with handwriting
+          // no longer require a handwriting languageHints flag when using DOCUMENT_TEXT_DETECTION."
+          // Empty array enables automatic language detection, which works best for most cases.
+          languageHints: []
         }
       }
     ]
