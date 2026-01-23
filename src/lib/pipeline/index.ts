@@ -88,19 +88,20 @@ const DEFAULT_MAX_CLAUDE_VERIFICATIONS = 10;
 // Minimum OCR confidence to attempt Claude verification (below this, image likely unreadable)
 const MIN_OCR_CONFIDENCE_FOR_CLAUDE = 0.30;
 
-// Thresholds tuned for handwriting recognition
-// Handwriting typically yields lower OCR confidence than printed text (0.5-0.8 range)
-const OCR_HIGH_CONFIDENCE = 0.70; // Lower threshold to trust handwriting OCR readings
-const FINDING_CONFIDENCE_THRESHOLD = 0.75; // More reasonable threshold for findings
-const QUALITY_COVERAGE_MIN = 0.50; // Accept more variation in handwriting quality
-const LINE_CONFIDENCE_UNCERTAIN = 0.55; // Handwriting often has moderate confidence
-const HANDWRITING_CONFIDENCE_THRESHOLD = 0.85; // Slightly lower for i-dots/t-crosses
+// Thresholds tuned for handwriting recognition based on Google Cloud Vision research
+// Handwriting typically yields 50-80% confidence (vs 95%+ for printed text)
+// Research shows: clear handwriting ~95%, mixed print/cursive ~90%, cursive ~85%, poor ~80%
+const OCR_HIGH_CONFIDENCE = 0.65; // Lowered: handwriting OCR often returns 50-80% confidence
+const FINDING_CONFIDENCE_THRESHOLD = 0.70; // Lowered to catch more content issues
+const QUALITY_COVERAGE_MIN = 0.50; // Accept variation in handwriting quality
+const LINE_CONFIDENCE_UNCERTAIN = 0.50; // Lowered: cursive handwriting often has moderate confidence
+const HANDWRITING_CONFIDENCE_THRESHOLD = 0.75; // Lowered for i-dots/t-crosses detection
 
 // Auto-preprocessing thresholds
 const MIN_CONTRAST_THRESHOLD = 0.3; // Below this, auto-enhance
 const MAX_BLUR_THRESHOLD = 0.15; // Below this blur score, image is too blurry
 const MAX_GLARE_THRESHOLD = 0.25; // Above this, too much glare
-const PDF_RENDER_SCALE = 2; // Render PDFs at 2x for ~200 DPI
+const PDF_RENDER_SCALE = 3; // Render PDFs at 3x for ~300 DPI (optimal for OCR per Google research)
 
 // Calculate Levenshtein distance for fuzzy matching
 function levenshteinDistance(a: string, b: string): number {
