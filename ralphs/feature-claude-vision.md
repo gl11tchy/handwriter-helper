@@ -85,21 +85,21 @@ export type PipelineOptions = {
 
 ### Phase 1: Types & API Client
 
-- [ ] **Write test:** Type definitions compile correctly
-- [ ] Add `ClaudeVerificationRequest` and `ClaudeVerificationResponse` to `/src/types/index.ts`
-- [ ] Add `enableClaudeVerification` to `PipelineOptions` type in `/src/lib/pipeline/index.ts`
+- [x] **Write test:** Type definitions compile correctly
+- [x] Add `ClaudeVerificationRequest` and `ClaudeVerificationResponse` to `/src/types/index.ts`
+- [x] Add `enableClaudeVerification` to `PipelineOptions` type in `/src/lib/pipeline/index.ts`
 
-- [ ] **Write test:** API client method exists and has correct signature
-- [ ] Add `verifyWithClaude(request: ClaudeVerificationRequest): Promise<ClaudeVerificationResponse>` to `/src/lib/api.ts`
+- [x] **Write test:** API client method exists and has correct signature
+- [x] Add `verifyWithClaude(request: ClaudeVerificationRequest): Promise<ClaudeVerificationResponse>` to `/src/lib/api.ts`
 
 ### Phase 2: Worker Endpoint
 
-- [ ] **Write test:** Endpoint returns 503 when ANTHROPIC_API_KEY not configured
-- [ ] **Write test:** Endpoint returns 400 when missing required fields
-- [ ] **Write test:** Endpoint returns valid response structure on success
+- [x] **Write test:** Endpoint returns 503 when ANTHROPIC_API_KEY not configured
+- [x] **Write test:** Endpoint returns 400 when missing required fields
+- [x] **Write test:** Endpoint returns valid response structure on success
 
-- [ ] Add `ANTHROPIC_API_KEY?: string` to `/worker/env.ts` Env interface
-- [ ] Implement `/api/verify-with-claude` endpoint in `/worker/index.ts`:
+- [x] Add `ANTHROPIC_API_KEY?: string` to `/worker/env.ts` Env interface
+- [x] Implement `/api/verify-with-claude` endpoint in `/worker/index.ts`:
   - Validate request body (imageB64, expectedText required)
   - Call Anthropic API with Claude Vision model (claude-3-5-sonnet-20241022 or claude-3-haiku for cost)
   - Use structured prompt to get transcription + match judgment
@@ -107,24 +107,24 @@ export type PipelineOptions = {
 
 ### Phase 3: Image Cropping Utility
 
-- [ ] **Write test:** `cropLineImage()` returns valid base64 for given bbox
-- [ ] **Write test:** `cropLineImage()` handles edge cases (bbox at image edge)
+- [x] **Write test:** `cropLineImage()` returns valid base64 for given bbox
+- [x] **Write test:** `cropLineImage()` handles edge cases (bbox at image edge)
 
-- [ ] Add `cropLineImage(canvas: HTMLCanvasElement, bbox: BoundingBox): string` utility function in `/src/lib/pipeline/index.ts`
+- [x] Add `cropLineImage(canvas: HTMLCanvasElement, bbox: BoundingBox): string` utility function in `/src/lib/pipeline/index.ts`
   - Creates temporary canvas
   - Draws cropped region
   - Returns base64 encoded JPEG
 
 ### Phase 4: Pipeline Integration
 
-- [ ] **Write test:** Pipeline skips Claude verification when `enableClaudeVerification` is false
-- [ ] **Write test:** Pipeline calls Claude verification for uncertain lines when enabled
-- [ ] **Write test:** Pipeline updates findings from "content_uncertain" to "content_mismatch" when Claude confirms mismatch
-- [ ] **Write test:** Pipeline removes uncertain finding when Claude confirms match
-- [ ] **Write test:** Pipeline falls back gracefully when Claude API fails
+- [x] **Write test:** Pipeline skips Claude verification when `enableClaudeVerification` is false
+- [x] **Write test:** Pipeline calls Claude verification for uncertain lines when enabled
+- [x] **Write test:** Pipeline updates findings from "content_uncertain" to "content_mismatch" when Claude confirms mismatch
+- [x] **Write test:** Pipeline removes uncertain finding when Claude confirms match
+- [x] **Write test:** Pipeline falls back gracefully when Claude API fails
 
-- [ ] Add new step constant: `"verify_with_claude"` to `PIPELINE_STEPS` (between `verify_content` and `check_handwriting`)
-- [ ] Implement `verifyUncertainLinesWithClaude()` function:
+- [x] Add new step constant: `"verify_with_claude"` to `PIPELINE_STEPS` (between `verify_content` and `check_handwriting`)
+- [x] Implement `verifyUncertainLinesWithClaude()` function:
   ```typescript
   async function verifyUncertainLinesWithClaude(
     pageCanvases: PageCanvas[],
@@ -133,26 +133,26 @@ export type PipelineOptions = {
     options: PipelineOptions
   ): Promise<{ updatedFindings: Finding[]; updatedMetrics: LineConfidenceRecord[] }>
   ```
-- [ ] Integrate into `runPipeline()` after `verifyContent()` call
-- [ ] Add progress reporting for Claude verification step
+- [x] Integrate into `runPipeline()` after `verifyContent()` call
+- [x] Add progress reporting for Claude verification step
 
 ### Phase 5: Error Handling & Fallback
 
-- [ ] **Write test:** Single line failure doesn't stop other verifications
-- [ ] **Write test:** Network timeout falls back to original uncertain status
+- [x] **Write test:** Single line failure doesn't stop other verifications
+- [x] **Write test:** Network timeout falls back to original uncertain status
 
-- [ ] Wrap each Claude call in try/catch
-- [ ] On failure, preserve original uncertain status
-- [ ] Log failures for debugging (in DEV mode)
+- [x] Wrap each Claude call in try/catch
+- [x] On failure, preserve original uncertain status
+- [x] Log failures for debugging (in DEV mode)
 
 ### Phase 6: Cost Optimization
 
-- [ ] **Write test:** Lines with very low confidence (< 0.3) are skipped (image likely unreadable)
-- [ ] **Write test:** Maximum of N lines per submission sent to Claude (configurable)
+- [x] **Write test:** Lines with very low confidence (< 0.3) are skipped (image likely unreadable)
+- [x] **Write test:** Maximum of N lines per submission sent to Claude (configurable)
 
-- [ ] Add `maxClaudeVerifications?: number` to options (default: 10)
-- [ ] Skip lines with OCR confidence < 0.3 (image likely unreadable by any model)
-- [ ] Prioritize lines by OCR confidence (higher confidence = more likely Claude can help)
+- [x] Add `maxClaudeVerifications?: number` to options (default: 10)
+- [x] Skip lines with OCR confidence < 0.3 (image likely unreadable by any model)
+- [x] Prioritize lines by OCR confidence (higher confidence = more likely Claude can help)
 
 ## File Changes Summary
 
@@ -188,13 +188,13 @@ Respond in JSON format:
 
 ## Acceptance Criteria
 
-- [ ] Lines marked "uncertain" get a second verification via Claude Vision when `enableClaudeVerification: true`
-- [ ] Claude's response is used to upgrade "uncertain" to either "verified" or "mismatch"
-- [ ] Feature is behind `enableClaudeVerification` flag (default: false)
-- [ ] Proper error handling if Claude API fails (fall back to original uncertain result)
-- [ ] Cost-conscious: only invoke for truly uncertain cases (not all lines)
-- [ ] Progress indicator shows Claude verification step
-- [ ] Works with both single images and multi-page PDFs
+- [x] Lines marked "uncertain" get a second verification via Claude Vision when `enableClaudeVerification: true`
+- [x] Claude's response is used to upgrade "uncertain" to either "verified" or "mismatch"
+- [x] Feature is behind `enableClaudeVerification` flag (default: false)
+- [x] Proper error handling if Claude API fails (fall back to original uncertain result)
+- [x] Cost-conscious: only invoke for truly uncertain cases (not all lines)
+- [x] Progress indicator shows Claude verification step
+- [x] Works with both single images and multi-page PDFs
 
 ## Cost Considerations
 
@@ -209,7 +209,7 @@ Respond in JSON format:
 | 500×50 px (small line) | 25,000 / 750 | ~33 |
 | 1000×1000 px (full region) | 1,000,000 / 750 | ~1,334 |
 
-**Pricing (input tokens):**
+**Pricing (input tokens, as of January 2026 — per [Anthropic pricing](https://www.anthropic.com/pricing)):**
 - **Claude 3.5 Haiku**: $0.80/million input tokens, $4/million output tokens
 - **Claude 3.5 Sonnet**: $3/million input tokens, $15/million output tokens
 
@@ -229,4 +229,4 @@ Recommend starting with Haiku for cost efficiency. With max 10 uncertain lines p
 ---
 
 *Plan created: 2026-01-23*
-*Status: Ready for implementation*
+*Status: Implemented (PR #23)*
