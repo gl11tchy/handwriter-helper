@@ -896,12 +896,19 @@ async function verifyUncertainLinesWithClaude(
       // Update metrics based on Claude's response
       const metricIndex = updatedMetrics.findIndex(m => m.lineIndex === lineIndex);
       if (metricIndex >= 0) {
+        // Recompute similarity and findingConfidence using Claude's transcription
+        const claudeSimilarity = calculateSimilarity(response.transcription, metric.expectedText);
+        const claudeConfidence = response.confidence === "high" ? 0.95 : response.confidence === "medium" ? 0.75 : 0.55;
+        const claudeFindingConfidence = claudeConfidence * (1 - claudeSimilarity);
+
         if (response.matchesExpected) {
           // Claude confirms match - mark as verified
           updatedMetrics[metricIndex] = {
             ...updatedMetrics[metricIndex],
             decision: "verified",
             observedText: response.transcription,
+            similarity: claudeSimilarity,
+            findingConfidence: claudeFindingConfidence,
           };
           // Remove the uncertain finding
           const findingIndex = updatedFindings.findIndex(
@@ -916,6 +923,8 @@ async function verifyUncertainLinesWithClaude(
             ...updatedMetrics[metricIndex],
             decision: "mismatch",
             observedText: response.transcription,
+            similarity: claudeSimilarity,
+            findingConfidence: claudeFindingConfidence,
           };
           // Convert uncertain finding to mismatch
           const findingIndex = updatedFindings.findIndex(
@@ -926,8 +935,8 @@ async function verifyUncertainLinesWithClaude(
               ...updatedFindings[findingIndex],
               type: "content_mismatch",
               observedText: response.transcription,
-              confidence: response.confidence === "high" ? 0.95 : response.confidence === "medium" ? 0.75 : 0.55,
-              message: `Line ${lineIndex + 1}: Content mismatch confirmed by Claude - "${response.transcription}" (${response.reasoning || "does not match expected text"})`,
+              confidence: claudeConfidence,
+              message: `Line ${lineIndex + 1}: Content mismatch confirmed by Claude - "${response.transcription}" (${Math.round(claudeSimilarity * 100)}% similar, ${response.reasoning || "does not match expected text"})`,
             };
           }
         }

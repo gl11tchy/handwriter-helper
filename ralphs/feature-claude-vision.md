@@ -2,7 +2,9 @@
 
 ## Goal
 
-Add Claude Vision as a secondary verification layer to resolve "uncertain" OCR results. When Google Vision returns low-confidence readings (< 0.55) or when text similarity is in the ambiguous zone (0.55-0.70 OCR confidence with moderate similarity), invoke Claude Vision for a second opinion. This reduces the ~10-20% of lines currently marked "uncertain" by providing a more definitive verification.
+Add Claude Vision as a secondary verification layer to resolve "uncertain" OCR results. When Google Vision returns low-confidence readings (< `LINE_CONFIDENCE_UNCERTAIN`, currently 0.50) or when OCR confidence is below `OCR_HIGH_CONFIDENCE` (currently 0.65) with moderate similarity, invoke Claude Vision for a second opinion. This reduces the ~10-20% of lines currently marked "uncertain" by providing a more definitive verification.
+
+> **Note**: Threshold values are defined as constants in `src/lib/pipeline/index.ts`. Refer to `LINE_CONFIDENCE_UNCERTAIN`, `OCR_HIGH_CONFIDENCE`, and `FINDING_CONFIDENCE_THRESHOLD` for current values.
 
 **Why this matters:** Users currently receive no clear feedback on uncertain lines, which degrades the grading experience. Claude's vision capabilities can often read handwriting that Google Vision struggles with.
 
