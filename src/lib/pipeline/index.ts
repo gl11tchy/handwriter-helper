@@ -99,9 +99,8 @@ const HANDWRITING_CONFIDENCE_THRESHOLD = 0.75; // Lowered for i-dots/t-crosses d
 
 // Auto-preprocessing thresholds
 const MIN_CONTRAST_THRESHOLD = 0.3; // Below this, auto-enhance
-const MAX_BLUR_THRESHOLD = 0.15; // Below this blur score, image is too blurry
 const MAX_GLARE_THRESHOLD = 0.25; // Above this, too much glare
-const CONTENT_BRIGHTNESS_THRESHOLD = 200; // Pixels darker than this are considered "content" (ink/writing)
+// Note: Blur detection removed - Laplacian variance doesn't work well for handwriting on white paper
 const PDF_RENDER_SCALE = 3; // Render PDFs at 3x for ~300 DPI (optimal for OCR per Google research)
 
 // Calculate Levenshtein distance for fuzzy matching
@@ -313,49 +312,9 @@ export function preprocessImage(
   const avgBrightness = totalBrightness / (data.length / 4);
   let contrast = (maxBrightness - minBrightness) / 255;
 
-  // Blur detection using Laplacian variance - only on content regions (ink/writing)
-  // This avoids false positives from blank white paper areas
-  let laplacianVariance = 0;
-  let contentPixelCount = 0;
-  const width = canvas.width;
-
-  for (let y = 1; y < canvas.height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const idx = (y * width + x) * 4;
-      const center = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
-
-      // Only measure blur on content pixels (darker areas = ink/writing)
-      if (center >= CONTENT_BRIGHTNESS_THRESHOLD) {
-        continue; // Skip white/blank areas
-      }
-
-      const neighbors = [
-        ((y - 1) * width + x) * 4,
-        ((y + 1) * width + x) * 4,
-        (y * width + x - 1) * 4,
-        (y * width + x + 1) * 4,
-      ];
-
-      let laplacian = -4 * center;
-      for (const nIdx of neighbors) {
-        laplacian += (data[nIdx] + data[nIdx + 1] + data[nIdx + 2]) / 3;
-      }
-
-      laplacianVariance += laplacian * laplacian;
-      contentPixelCount++;
-    }
-  }
-
-  // Calculate blur score only from content regions
-  // If less than 1% of image is content, skip blur check (not enough data)
-  const totalPixels = (canvas.width - 2) * (canvas.height - 2);
-  const contentRatio = contentPixelCount / totalPixels;
-  let blurScore = 1; // Default to sharp if not enough content to measure
-
-  if (contentRatio >= 0.01) {
-    laplacianVariance /= contentPixelCount;
-    blurScore = Math.min(1, laplacianVariance / 500); // Higher = sharper
-  }
+  // Blur detection removed - Laplacian variance causes too many false positives
+  // on handwriting images with white paper backgrounds
+  const blurScore = 1; // Always report as sharp (blur check disabled)
 
   // Glare detection (high brightness regions)
   let glarePixels = 0;
@@ -364,11 +323,6 @@ export function preprocessImage(
     if (brightness > 240) glarePixels++;
   }
   const glareScore = glarePixels / (data.length / 4);
-
-  // Check for ungradable conditions
-  if (blurScore < MAX_BLUR_THRESHOLD) {
-    rejectionReasons.push("Image is too blurry - please retake the photo with better focus");
-  }
 
   if (glareScore > MAX_GLARE_THRESHOLD) {
     rejectionReasons.push("Too much glare detected - please retake without direct light reflection");

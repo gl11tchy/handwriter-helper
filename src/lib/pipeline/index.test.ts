@@ -272,72 +272,36 @@ describe("preprocessImage blur detection", () => {
 
     const result = preprocessImage(canvas, false);
 
-    // Sharp image should NOT have blur rejection
+    // No blur rejection (blur check is disabled)
     const hasBlurRejection = result.rejectionReasons.some(r =>
       r.toLowerCase().includes("blurry")
     );
     expect(hasBlurRejection).toBe(false);
-    expect(result.metrics.blurScore).toBeGreaterThan(0.15);
   });
 
-  it("rejects extremely blurry handwriting", () => {
-    // Create extremely blurry image - almost no edge definition
-    // Simulates severe out-of-focus or motion blur
+  it("does not reject images based on blur (blur check disabled)", () => {
+    // Blur check was removed because Laplacian variance doesn't work well
+    // for handwriting images with lots of white space
     const canvas = createTestCanvas(100, 100, (x, y) => {
-      // Draw horizontal "blurry" lines with almost no edge definition
+      // Simulate blurry content
       const linePositions = [25, 50, 75];
       for (const lineY of linePositions) {
         const distance = Math.abs(y - lineY);
         if (distance <= 20) {
-          // Extremely gradual transition - center barely darker than edges
-          // This simulates motion blur or severe defocus
           const blurFactor = distance / 20;
-          // Center is 150 (gray), edges fade to 199 (just under threshold)
           return Math.round(150 + (199 - 150) * blurFactor);
         }
       }
-      return 255; // White paper
+      return 255;
     });
 
     const result = preprocessImage(canvas, false);
 
-    // Extremely blurry image should have very low blur score
-    // Even if not rejected at current threshold, score should be notably low
-    expect(result.metrics.blurScore).toBeLessThan(0.3);
-  });
-
-  it("detects blur score difference between sharp and blurry images", () => {
-    // Sharp image with crisp edges
-    const sharpCanvas = createTestCanvas(100, 100, (x, y) => {
-      const linePositions = [20, 40, 60, 80];
-      for (const lineY of linePositions) {
-        if (y >= lineY && y <= lineY + 3) {
-          return 30; // Instant transition to dark
-        }
-      }
-      return 255;
-    });
-
-    // Blurry image with gradual edges
-    const blurryCanvas = createTestCanvas(100, 100, (x, y) => {
-      const linePositions = [20, 40, 60, 80];
-      for (const lineY of linePositions) {
-        const distance = Math.abs(y - lineY);
-        if (distance <= 10) {
-          const blurFactor = distance / 10;
-          return Math.round(80 + (255 - 80) * blurFactor);
-        }
-      }
-      return 255;
-    });
-
-    const sharpResult = preprocessImage(sharpCanvas, false);
-    const blurryResult = preprocessImage(blurryCanvas, false);
-
-    // Sharp should have notably higher blur score than blurry
-    expect(sharpResult.metrics.blurScore).toBeGreaterThan(
-      blurryResult.metrics.blurScore * 2
+    // Should NOT have blur rejection - blur check is disabled
+    const hasBlurRejection = result.rejectionReasons.some(r =>
+      r.toLowerCase().includes("blurry")
     );
+    expect(hasBlurRejection).toBe(false);
   });
 
   it("handles mostly white paper with sparse content correctly", () => {
