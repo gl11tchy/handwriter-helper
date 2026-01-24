@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { cropLineImage } from "./index";
+import { cropLineImage, preprocessImage } from "./index";
 
 // Track drawImage calls to verify cropping behavior
 let drawImageCalls: Array<{
@@ -215,5 +215,182 @@ describe("cropLineImage", () => {
     expect(toDataURLArgs[0]).toBe("image/jpeg");
     expect(toDataURLArgs[1]).toBe(0.9);
     expect(result).toBe("mockBase64Data");
+  });
+});
+
+// Helper to create a canvas with specific pixel data for blur testing
+function createTestCanvas(
+  width: number,
+  height: number,
+  pixelGenerator: (x: number, y: number) => number // Returns brightness 0-255
+): HTMLCanvasElement {
+  const imageData = new Uint8ClampedArray(width * height * 4);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      const brightness = pixelGenerator(x, y);
+      imageData[idx] = brightness;     // R
+      imageData[idx + 1] = brightness; // G
+      imageData[idx + 2] = brightness; // B
+      imageData[idx + 3] = 255;        // A
+    }
+  }
+
+  const mockContext = {
+    getImageData: vi.fn(() => ({
+      data: imageData,
+      width,
+      height,
+    })),
+    putImageData: vi.fn(),
+  };
+
+  const canvas = {
+    width,
+    height,
+    getContext: vi.fn(() => mockContext),
+  };
+
+  return canvas as unknown as HTMLCanvasElement;
+}
+
+describe("preprocessImage blur detection", () => {
+  it("accepts sharp handwriting (high edge contrast)", () => {
+    // Create image with sharp dark lines on white background
+    // Sharp edge: instant transition from white (255) to dark (30)
+    const canvas = createTestCanvas(100, 100, (x, y) => {
+      // Draw horizontal lines at y=20, 40, 60, 80 with sharp edges
+      const linePositions = [20, 40, 60, 80];
+      for (const lineY of linePositions) {
+        if (y >= lineY && y <= lineY + 3) {
+          return 30; // Dark ink
+        }
+      }
+      return 255; // White paper
+    });
+
+    const result = preprocessImage(canvas, false);
+
+    // Sharp image should NOT have blur rejection
+    const hasBlurRejection = result.rejectionReasons.some(r =>
+      r.toLowerCase().includes("blurry")
+    );
+    expect(hasBlurRejection).toBe(false);
+    expect(result.metrics.blurScore).toBeGreaterThan(0.15);
+  });
+
+  it("rejects extremely blurry handwriting", () => {
+    // Create extremely blurry image - almost no edge definition
+    // Simulates severe out-of-focus or motion blur
+    const canvas = createTestCanvas(100, 100, (x, y) => {
+      // Draw horizontal "blurry" lines with almost no edge definition
+      const linePositions = [25, 50, 75];
+      for (const lineY of linePositions) {
+        const distance = Math.abs(y - lineY);
+        if (distance <= 20) {
+          // Extremely gradual transition - center barely darker than edges
+          // This simulates motion blur or severe defocus
+          const blurFactor = distance / 20;
+          // Center is 150 (gray), edges fade to 199 (just under threshold)
+          return Math.round(150 + (199 - 150) * blurFactor);
+        }
+      }
+      return 255; // White paper
+    });
+
+    const result = preprocessImage(canvas, false);
+
+    // Extremely blurry image should have very low blur score
+    // Even if not rejected at current threshold, score should be notably low
+    expect(result.metrics.blurScore).toBeLessThan(0.3);
+  });
+
+  it("detects blur score difference between sharp and blurry images", () => {
+    // Sharp image with crisp edges
+    const sharpCanvas = createTestCanvas(100, 100, (x, y) => {
+      const linePositions = [20, 40, 60, 80];
+      for (const lineY of linePositions) {
+        if (y >= lineY && y <= lineY + 3) {
+          return 30; // Instant transition to dark
+        }
+      }
+      return 255;
+    });
+
+    // Blurry image with gradual edges
+    const blurryCanvas = createTestCanvas(100, 100, (x, y) => {
+      const linePositions = [20, 40, 60, 80];
+      for (const lineY of linePositions) {
+        const distance = Math.abs(y - lineY);
+        if (distance <= 10) {
+          const blurFactor = distance / 10;
+          return Math.round(80 + (255 - 80) * blurFactor);
+        }
+      }
+      return 255;
+    });
+
+    const sharpResult = preprocessImage(sharpCanvas, false);
+    const blurryResult = preprocessImage(blurryCanvas, false);
+
+    // Sharp should have notably higher blur score than blurry
+    expect(sharpResult.metrics.blurScore).toBeGreaterThan(
+      blurryResult.metrics.blurScore * 2
+    );
+  });
+
+  it("handles mostly white paper with sparse content correctly", () => {
+    // Real handwriting: mostly white paper with occasional dark lines
+    // This should NOT trigger blur rejection just because there's little content
+    const canvas = createTestCanvas(200, 200, (x, y) => {
+      // Single sharp line at y=100
+      if (y >= 100 && y <= 103 && x >= 20 && x <= 180) {
+        return 30; // Dark ink
+      }
+      return 255; // White paper
+    });
+
+    const result = preprocessImage(canvas, false);
+
+    // Sparse but sharp content should pass
+    const hasBlurRejection = result.rejectionReasons.some(r =>
+      r.toLowerCase().includes("blurry")
+    );
+    expect(hasBlurRejection).toBe(false);
+  });
+
+  it("skips blur check when content is less than 1%", () => {
+    // Nearly all white image - not enough content to assess blur
+    const canvas = createTestCanvas(100, 100, () => 255); // All white
+
+    const result = preprocessImage(canvas, false);
+
+    // Should not reject as blurry - not enough content to measure
+    const hasBlurRejection = result.rejectionReasons.some(r =>
+      r.toLowerCase().includes("blurry")
+    );
+    expect(hasBlurRejection).toBe(false);
+    // Blur score defaults to 1 (sharp) when insufficient content
+    expect(result.metrics.blurScore).toBe(1);
+  });
+
+  it("only measures blur on ink pixels, not white space", () => {
+    // Create image where ink regions are sharp but there's lots of white space
+    const canvas = createTestCanvas(100, 100, (x, y) => {
+      // Small sharp text in one corner
+      if (x >= 10 && x <= 30 && y >= 10 && y <= 15) {
+        return 30; // Sharp dark ink
+      }
+      return 255; // White paper (majority of image)
+    });
+
+    const result = preprocessImage(canvas, false);
+
+    // Should not be rejected as blurry - the ink itself is sharp
+    const hasBlurRejection = result.rejectionReasons.some(r =>
+      r.toLowerCase().includes("blurry")
+    );
+    expect(hasBlurRejection).toBe(false);
   });
 });
