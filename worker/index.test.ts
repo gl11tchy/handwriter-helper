@@ -20,6 +20,12 @@ type ReportGetResponse = {
   meta: { size: number };
 };
 type OcrResponse = { text: string; words: unknown[] };
+type ClaudeVerificationResponse = {
+  transcription: string;
+  matchesExpected: boolean;
+  confidence: "high" | "medium" | "low";
+  reasoning?: string;
+};
 
 // Mock R2 storage
 function createMockR2(): R2Bucket {
@@ -67,6 +73,7 @@ function createMockEnv(overrides: Partial<Env> = {}): Env {
     ENVIRONMENT: "test",
     GOOGLE_CLOUD_API_KEY: "test-api-key",
     SIGNING_SECRET: "test-signing-secret",
+    ANTHROPIC_API_KEY: "test-anthropic-key",
     ...overrides,
   };
 }
@@ -638,6 +645,181 @@ describe("Worker", () => {
 
       expect(response.status).toBe(503);
       expect(data.error).toBe("OCR service not configured");
+    });
+  });
+
+  describe("Claude verification endpoint", () => {
+    beforeEach(() => {
+      // Mock global fetch for Anthropic API
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  transcription: "Hello World",
+                  matchesExpected: true,
+                  confidence: "high",
+                }),
+              },
+            ],
+            stop_reason: "end_turn",
+          }),
+        })
+      );
+    });
+
+    // Helper to create requests with unique IPs to avoid rate limiting
+    function createClaudeRequest(body: unknown, ip: string, includeContentLength = true) {
+      const bodyStr = JSON.stringify(body);
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "CF-Connecting-IP": ip,
+      };
+      if (includeContentLength) {
+        headers["Content-Length"] = String(bodyStr.length);
+      }
+      return new Request("https://example.com/api/verify-with-claude", {
+        method: "POST",
+        headers,
+        body: bodyStr,
+      });
+    }
+
+    it("processes Claude verification request successfully", async () => {
+      const request = createClaudeRequest({
+        imageB64: "base64-image-data",
+        expectedText: "Hello World",
+        lineIndex: 0,
+      }, "192.168.10.1");
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ClaudeVerificationResponse;
+
+      expect(response.status).toBe(200);
+      expect(data.transcription).toBe("Hello World");
+      expect(data.matchesExpected).toBe(true);
+      expect(data.confidence).toBe("high");
+    });
+
+    it("returns 503 when ANTHROPIC_API_KEY not configured", async () => {
+      const envWithoutKey = createMockEnv({ ANTHROPIC_API_KEY: undefined });
+      const request = createClaudeRequest({
+        imageB64: "test",
+        expectedText: "test",
+        lineIndex: 0,
+      }, "192.168.10.2");
+
+      const response = await worker.fetch(request, envWithoutKey);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(503);
+      expect(data.error).toBe("Claude verification service not configured");
+    });
+
+    it("returns 400 when missing required fields", async () => {
+      const request = createClaudeRequest({
+        lineIndex: 0,
+        // missing imageB64 and expectedText
+      }, "192.168.10.3");
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(400);
+      expect(data.error).toContain("Missing required fields");
+    });
+
+    it("returns 411 when Content-Length header is missing", async () => {
+      const request = createClaudeRequest({
+        imageB64: "test-image",
+        expectedText: "test",
+        lineIndex: 0,
+      }, "192.168.10.7", false); // Don't include Content-Length
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(411);
+      expect(data.error).toBe("Content-Length header is required");
+    });
+
+    it("returns 400 when imageB64 is empty", async () => {
+      const request = createClaudeRequest({
+        imageB64: "",
+        expectedText: "Hello",
+        lineIndex: 0,
+      }, "192.168.10.4");
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(400);
+      expect(data.error).toContain("Missing required fields");
+    });
+
+    it("handles Claude API errors gracefully", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 500,
+          text: async () => "Internal server error",
+        })
+      );
+
+      const request = createClaudeRequest({
+        imageB64: "test-image",
+        expectedText: "test",
+        lineIndex: 0,
+      }, "192.168.10.5");
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(500);
+      expect(data.error).toContain("Anthropic API error");
+    });
+
+    it("handles mismatched content correctly", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  transcription: "Helo Wrld",
+                  matchesExpected: false,
+                  confidence: "medium",
+                  reasoning: "Multiple spelling errors detected",
+                }),
+              },
+            ],
+            stop_reason: "end_turn",
+          }),
+        })
+      );
+
+      const request = createClaudeRequest({
+        imageB64: "base64-image-data",
+        expectedText: "Hello World",
+        lineIndex: 0,
+      }, "192.168.10.6");
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ClaudeVerificationResponse;
+
+      expect(response.status).toBe(200);
+      expect(data.transcription).toBe("Helo Wrld");
+      expect(data.matchesExpected).toBe(false);
+      expect(data.confidence).toBe("medium");
+      expect(data.reasoning).toBe("Multiple spelling errors detected");
     });
   });
 

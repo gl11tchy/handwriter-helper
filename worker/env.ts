@@ -6,4 +6,5 @@ export interface Env {
   GOOGLE_CLOUD_API_KEY: string;
   SIGNING_SECRET: string;
   RESEND_API_KEY?: string;
+  ANTHROPIC_API_KEY?: string;  // For Claude Vision verification of uncertain OCR results
 }

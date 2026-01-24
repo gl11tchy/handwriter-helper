@@ -126,6 +126,7 @@ export type PipelineStep =
   | "detect_lines"
   | "ocr"
   | "verify_content"
+  | "verify_with_claude"
   | "check_handwriting"
   | "quality_gate"
   | "score"
@@ -221,4 +222,21 @@ export type OCRConfidenceMetrics = {
     OCR_HIGH_CONFIDENCE: number;
     FINDING_CONFIDENCE_THRESHOLD: number;
   };
+};
+
+// ============================================
+// Claude Vision Verification Types
+// ============================================
+
+export type ClaudeVerificationRequest = {
+  imageB64: string;      // Cropped line image, base64 encoded
+  expectedText: string;  // What the line should say
+  lineIndex: number;     // For tracking
+};
+
+export type ClaudeVerificationResponse = {
+  transcription: string;        // What Claude reads in the image
+  matchesExpected: boolean;     // Claude's judgment
+  confidence: "high" | "medium" | "low";  // Claude's confidence in its reading
+  reasoning?: string;           // Optional explanation
 };

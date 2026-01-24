@@ -67,6 +67,8 @@ export type PipelineResult = {
 export type PipelineOptions = {
   onProgress: (progress: PipelineProgress) => void;
   signal?: AbortSignal;
+  enableClaudeVerification?: boolean;  // Opt-in flag for Claude Vision verification (default: false)
+  maxClaudeVerifications?: number;     // Maximum lines to verify with Claude (default: 10)
 };
 
 const PIPELINE_STEPS: PipelineStep[] = [
@@ -75,10 +77,16 @@ const PIPELINE_STEPS: PipelineStep[] = [
   "detect_lines",
   "ocr",
   "verify_content",
+  "verify_with_claude",  // NEW: Claude Vision verification for uncertain lines
   "check_handwriting",
   "quality_gate",
   "score",
 ];
+
+// Default maximum number of lines to verify with Claude (cost control)
+const DEFAULT_MAX_CLAUDE_VERIFICATIONS = 10;
+// Minimum OCR confidence to attempt Claude verification (below this, image likely unreadable)
+const MIN_OCR_CONFIDENCE_FOR_CLAUDE = 0.30;
 
 // Thresholds tuned for handwriting recognition based on Google Cloud Vision research
 // Handwriting typically yields 50-80% confidence (vs 95%+ for printed text)
@@ -473,6 +481,33 @@ function canvasToBase64(canvas: HTMLCanvasElement): string {
   return dataUrl.split(",")[1];
 }
 
+// Crop a line region from a canvas and return as base64
+// Used for Claude Vision verification of specific lines
+// Exported for testing
+export function cropLineImage(
+  canvas: HTMLCanvasElement,
+  bbox: { x: number; y: number; w: number; h: number }
+): string {
+  // Add some padding around the bbox for better context
+  const padding = 10;
+  const x = Math.max(0, bbox.x - padding);
+  const y = Math.max(0, bbox.y - padding);
+  const w = Math.min(canvas.width - x, bbox.w + padding * 2);
+  const h = Math.min(canvas.height - y, bbox.h + padding * 2);
+
+  // Create temporary canvas for the cropped region
+  const cropCanvas = document.createElement("canvas");
+  cropCanvas.width = w;
+  cropCanvas.height = h;
+  const ctx = cropCanvas.getContext("2d")!;
+
+  // Draw the cropped region
+  ctx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
+
+  // Return as base64
+  return canvasToBase64(cropCanvas);
+}
+
 // Assign words to detected line regions based on vertical overlap
 function assignWordsToLines(
   words: Array<{
@@ -791,6 +826,138 @@ function verifyContent(
   }
 
   return { findings, uncertainCount, lineMetrics };
+}
+
+// Verify uncertain lines using Claude Vision API
+// Only called when enableClaudeVerification option is true
+async function verifyUncertainLinesWithClaude(
+  pageCanvases: PageCanvas[],
+  lineMetrics: LineConfidenceRecord[],
+  contentFindings: Finding[],
+  extractedLines: ExtractedLineWithChars[],
+  options: PipelineOptions
+): Promise<{ updatedFindings: Finding[]; updatedMetrics: LineConfidenceRecord[] }> {
+  const { signal } = options;
+  // Normalize and clamp maxClaudeVerifications to a safe non-negative integer
+  const rawMax = options.maxClaudeVerifications ?? DEFAULT_MAX_CLAUDE_VERIFICATIONS;
+  const maxClaudeVerifications = Number.isFinite(rawMax) ? Math.max(0, Math.floor(rawMax)) : DEFAULT_MAX_CLAUDE_VERIFICATIONS;
+
+  // Find uncertain lines that are candidates for Claude verification
+  const uncertainLines = lineMetrics
+    .filter(m => m.decision === "uncertain" && m.ocrConfidence >= MIN_OCR_CONFIDENCE_FOR_CLAUDE)
+    .sort((a, b) => b.ocrConfidence - a.ocrConfidence) // Prioritize higher confidence (more likely Claude can help)
+    .slice(0, maxClaudeVerifications);
+
+  if (uncertainLines.length === 0) {
+    return { updatedFindings: contentFindings, updatedMetrics: lineMetrics };
+  }
+
+  reportProgress(
+    options,
+    "verify_with_claude",
+    `Verifying ${uncertainLines.length} uncertain lines with Claude...`,
+    0
+  );
+
+  const updatedFindings = [...contentFindings];
+  const updatedMetrics = [...lineMetrics];
+
+  for (let i = 0; i < uncertainLines.length; i++) {
+    if (signal?.aborted) throw new Error("Pipeline cancelled");
+
+    const metric = uncertainLines[i];
+    const lineIndex = metric.lineIndex;
+
+    // Find the extracted line to get its bbox
+    const extractedLine = extractedLines.find(l => l.lineIndex === lineIndex);
+    if (!extractedLine?.bbox) continue;
+
+    // Determine which page this line is on (for multi-page PDFs)
+    const pageCanvas = pageCanvases.find(pc => pc.pageIndex === extractedLine.pageIndex);
+    if (!pageCanvas) {
+      // Skip this line if no matching canvas found - don't verify against wrong page
+      if (import.meta.env.DEV) {
+        console.warn(`Claude verification: No canvas found for page ${extractedLine.pageIndex}, skipping line ${lineIndex + 1}`);
+      }
+      continue;
+    }
+
+    try {
+      // Crop the line image
+      const imageB64 = cropLineImage(pageCanvas.canvas, extractedLine.bbox);
+
+      // Call Claude Vision API
+      const response = await api.verifyWithClaude({
+        imageB64,
+        expectedText: metric.expectedText,
+        lineIndex,
+      });
+
+      // Update metrics based on Claude's response
+      const metricIndex = updatedMetrics.findIndex(m => m.lineIndex === lineIndex);
+      if (metricIndex >= 0) {
+        // Recompute similarity and findingConfidence using Claude's transcription
+        const claudeSimilarity = calculateSimilarity(response.transcription, metric.expectedText);
+        const claudeConfidence = response.confidence === "high" ? 0.95 : response.confidence === "medium" ? 0.75 : 0.55;
+        const claudeFindingConfidence = claudeConfidence * (1 - claudeSimilarity);
+
+        if (response.matchesExpected) {
+          // Claude confirms match - mark as verified
+          updatedMetrics[metricIndex] = {
+            ...updatedMetrics[metricIndex],
+            decision: "verified",
+            observedText: response.transcription,
+            similarity: claudeSimilarity,
+            findingConfidence: claudeFindingConfidence,
+          };
+          // Remove the uncertain finding
+          const findingIndex = updatedFindings.findIndex(
+            f => f.type === "content_uncertain" && f.lineIndex === lineIndex
+          );
+          if (findingIndex >= 0) {
+            updatedFindings.splice(findingIndex, 1);
+          }
+        } else {
+          // Claude confirms mismatch
+          updatedMetrics[metricIndex] = {
+            ...updatedMetrics[metricIndex],
+            decision: "mismatch",
+            observedText: response.transcription,
+            similarity: claudeSimilarity,
+            findingConfidence: claudeFindingConfidence,
+          };
+          // Convert uncertain finding to mismatch
+          const findingIndex = updatedFindings.findIndex(
+            f => f.type === "content_uncertain" && f.lineIndex === lineIndex
+          );
+          if (findingIndex >= 0) {
+            updatedFindings[findingIndex] = {
+              ...updatedFindings[findingIndex],
+              type: "content_mismatch",
+              observedText: response.transcription,
+              confidence: claudeFindingConfidence,
+              message: `Line ${lineIndex + 1}: Content mismatch confirmed by Claude - "${response.transcription}" (${Math.round(claudeSimilarity * 100)}% similar, ${response.reasoning || "does not match expected text"})`,
+            };
+          }
+        }
+      }
+
+      reportProgress(
+        options,
+        "verify_with_claude",
+        `Verified line ${lineIndex + 1} with Claude`,
+        (i + 1) / uncertainLines.length
+      );
+    } catch (error) {
+      // On failure, preserve original uncertain status
+      if (import.meta.env.DEV) {
+        console.warn(`Claude verification failed for line ${lineIndex + 1}:`, error);
+      }
+      // Continue to next line - don't let one failure stop all verifications
+    }
+  }
+
+  return { updatedFindings, updatedMetrics };
 }
 
 // Check handwriting mechanics (i dots, t crosses)
@@ -1193,13 +1360,46 @@ export async function runPipeline(
   );
 
   // Update page indices on content findings
-  const contentFindingsWithPages = contentFindings.map((f) => {
+  let contentFindingsWithPages = contentFindings.map((f) => {
     const extractedLine = allExtracted.find((e) => e.lineIndex === f.lineIndex);
     return {
       ...f,
       pageIndex: extractedLine?.pageIndex ?? 0,
     };
   });
+
+  let finalLineMetrics = lineMetrics;
+  let finalUncertainCount = uncertainCount;
+
+  // Step 5.5: Claude Vision verification for uncertain lines (opt-in)
+  if (options.enableClaudeVerification) {
+    reportProgress(options, "verify_with_claude", "Running Claude Vision verification...");
+    if (signal?.aborted) throw new Error("Pipeline cancelled");
+
+    // Collect page canvases for Claude verification
+    const pageCanvasesForClaude: PageCanvas[] = allDetectedLines.map(pd => ({
+      canvas: pd.canvas,
+      width: pd.canvas.width,
+      height: pd.canvas.height,
+      pageIndex: pd.pageIndex,
+    }));
+
+    const claudeResult = await verifyUncertainLinesWithClaude(
+      pageCanvasesForClaude,
+      lineMetrics,
+      contentFindingsWithPages,
+      allExtracted,
+      options
+    );
+
+    contentFindingsWithPages = claudeResult.updatedFindings;
+    finalLineMetrics = claudeResult.updatedMetrics;
+    // Recalculate uncertain count based on updated metrics
+    finalUncertainCount = finalLineMetrics.filter(m => m.decision === "uncertain").length;
+  } else {
+    // Skip Claude verification step when not enabled
+    reportProgress(options, "verify_with_claude", "Claude verification skipped (not enabled)", 1);
+  }
 
   // Step 6: Handwriting checks across all pages
   reportProgress(options, "check_handwriting", "Checking handwriting mechanics...");
@@ -1229,7 +1429,7 @@ export async function runPipeline(
   const quality = computeQualityGate(
     allExtracted,
     allFindings,
-    uncertainCount,
+    finalUncertainCount,
     assignment.requiredLineCount,
     ocrFailed,
     ocrErrorMessage
@@ -1251,13 +1451,13 @@ export async function runPipeline(
   });
 
   // Build confidence metrics for threshold tuning analysis
-  const ocrConfidences = lineMetrics.map((m) => m.ocrConfidence);
-  const similarities = lineMetrics.map((m) => m.similarity);
+  const ocrConfidences = finalLineMetrics.map((m) => m.ocrConfidence);
+  const similarities = finalLineMetrics.map((m) => m.similarity);
 
   const confidenceMetrics: OCRConfidenceMetrics = {
     timestamp: new Date().toISOString(),
-    totalLines: lineMetrics.length,
-    lineMetrics,
+    totalLines: finalLineMetrics.length,
+    lineMetrics: finalLineMetrics,
     summary: {
       avgOcrConfidence: ocrConfidences.length > 0
         ? ocrConfidences.reduce((a, b) => a + b, 0) / ocrConfidences.length
@@ -1267,9 +1467,9 @@ export async function runPipeline(
       avgSimilarity: similarities.length > 0
         ? similarities.reduce((a, b) => a + b, 0) / similarities.length
         : 0,
-      verifiedCount: lineMetrics.filter((m) => m.decision === "verified").length,
-      uncertainCount: lineMetrics.filter((m) => m.decision === "uncertain").length,
-      mismatchCount: lineMetrics.filter((m) => m.decision === "mismatch").length,
+      verifiedCount: finalLineMetrics.filter((m) => m.decision === "verified").length,
+      uncertainCount: finalLineMetrics.filter((m) => m.decision === "uncertain").length,
+      mismatchCount: finalLineMetrics.filter((m) => m.decision === "mismatch").length,
     },
     thresholdsUsed: {
       LINE_CONFIDENCE_UNCERTAIN,
@@ -1283,7 +1483,7 @@ export async function runPipeline(
     console.group("OCR Confidence Metrics (for threshold tuning)");
     console.log("Thresholds used:", confidenceMetrics.thresholdsUsed);
     console.log("Summary:", confidenceMetrics.summary);
-    console.table(lineMetrics.map((m) => ({
+    console.table(finalLineMetrics.map((m) => ({
       line: m.lineIndex + 1,
       ocrConf: (m.ocrConfidence * 100).toFixed(1) + "%",
       similarity: (m.similarity * 100).toFixed(1) + "%",
