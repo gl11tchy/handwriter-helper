@@ -830,7 +830,7 @@ export default {
           object = await env.STORAGE.get(`assignments/${assignmentId}.json`);
         } catch (storageError) {
           logFailure(url.pathname, "assignment_storage_fetch_error", requestId, storageError);
-          return errorJson(500, corsHeaders, {
+          return errorJson(503, corsHeaders, {
             error: "Failed to fetch assignment from storage",
             code: "ASSIGNMENT_STORAGE_FAILURE",
             retryable: true,
@@ -909,7 +909,22 @@ export default {
       // Upload encrypted report
       if (url.pathname === "/api/report" && request.method === "POST") {
         // Check content length
-        const contentLength = parseInt(request.headers.get("Content-Length") || "0");
+        const contentLengthHeader = request.headers.get("Content-Length");
+        if (!contentLengthHeader) {
+          return errorJson(411, corsHeaders, {
+            error: "Content-Length header is required",
+            code: "REPORT_CONTENT_LENGTH_REQUIRED",
+            retryable: false,
+          }, requestId);
+        }
+        const contentLength = Number(contentLengthHeader);
+        if (!Number.isFinite(contentLength) || contentLength < 0) {
+          return errorJson(400, corsHeaders, {
+            error: "Content-Length header must be a valid non-negative number",
+            code: "REPORT_INVALID_CONTENT_LENGTH",
+            retryable: false,
+          }, requestId);
+        }
         if (contentLength > MAX_PAYLOAD_SIZE) {
           return errorJson(413, corsHeaders, {
             error: `Payload too large. Maximum size is ${MAX_PAYLOAD_SIZE / (1024 * 1024)}MB.`,

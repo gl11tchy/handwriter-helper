@@ -4,7 +4,7 @@
 
 - `npm run build`: pass
 - `npm run lint`: pass (warnings only)
-- `npm run test`: pass (`142/142`)
+- `npm run test`: pass (`144/144`)
 - Trust/Privacy UX pass: completed (`/privacy` page + in-app copy alignment)
 
 ## Rollout Levels

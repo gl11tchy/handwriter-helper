@@ -479,7 +479,7 @@ describe("Worker", () => {
       const response = await worker.fetch(request, envWithFailingStorage);
       const data = (await response.json()) as ErrorResponse;
 
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(503);
       expect(data.error).toContain("storage");
       expect(data.code).toBe("ASSIGNMENT_STORAGE_FAILURE");
       expect(data.retryable).toBe(true);
@@ -606,12 +606,8 @@ describe("Worker", () => {
 
     it("retrieves an encrypted report", async () => {
       // First upload a report
-      const uploadRequest = new Request("https://example.com/api/report", {
+      const uploadRequest = createRequest("/api/report", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "CF-Connecting-IP": "127.0.0.1",
-        },
         body: JSON.stringify({
           ciphertextB64: "test-encrypted-data",
           nonceB64: "test-nonce",
@@ -681,6 +677,48 @@ describe("Worker", () => {
       expect(response.status).toBe(503);
       expect(data.code).toBe("REPORT_STORAGE_FAILURE");
       expect(data.retryable).toBe(true);
+    });
+
+    it("returns 411 when report upload Content-Length header is missing", async () => {
+      const request = createRequest("/api/report", {
+        method: "POST",
+        body: JSON.stringify({
+          ciphertextB64: "data",
+          nonceB64: "nonce",
+          meta: {
+            createdAt: new Date().toISOString(),
+            size: 256,
+          },
+        }),
+      });
+      request.headers.delete("Content-Length");
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(411);
+      expect(data.code).toBe("REPORT_CONTENT_LENGTH_REQUIRED");
+    });
+
+    it("returns 400 when report upload Content-Length header is invalid", async () => {
+      const request = createRequest("/api/report", {
+        method: "POST",
+        headers: { "Content-Length": "-1" },
+        body: JSON.stringify({
+          ciphertextB64: "data",
+          nonceB64: "nonce",
+          meta: {
+            createdAt: new Date().toISOString(),
+            size: 256,
+          },
+        }),
+      });
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(400);
+      expect(data.code).toBe("REPORT_INVALID_CONTENT_LENGTH");
     });
   });
 

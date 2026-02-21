@@ -88,7 +88,7 @@ A React/Vite frontend plus Cloudflare Worker backend for creating signed handwri
 - Framework: Vitest + React/jsdom
 - Validation status (latest run):
   - `npm run lint` → pass
-  - `npm run test` → pass (`142/142`)
+  - `npm run test` → pass (`144/144`)
   - `npm run build` → pass
   - `APP_URL='https://example.com/path' ... bash scripts/check-launch-env.sh` → pass
   - `APP_URL='https://#frag' ... bash scripts/check-launch-env.sh` → fails as expected (exit 1)
@@ -113,8 +113,12 @@ A React/Vite frontend plus Cloudflare Worker backend for creating signed handwri
   - API client falls back to `X-Request-Id` response header when error body omits `requestId`
   - worker/api tests updated for new failure-path coverage and request-id behavior
 - Additional review cleanup:
-  - synced launch readiness checklist test-count status to `142/142`
+  - synced launch readiness checklist test-count status to current canonical test run
   - removed assignment retrieval debug `console.warn` logs from `worker/index.ts` to reduce production log noise
+- Report API hardening:
+  - assignment storage fetch failures now return `503` with retryable `ASSIGNMENT_STORAGE_FAILURE`
+  - report upload now enforces valid `Content-Length` with explicit `REPORT_CONTENT_LENGTH_REQUIRED`/`REPORT_INVALID_CONTENT_LENGTH`
+  - worker tests updated for report header validation and new storage-failure semantics
 - Privacy/trust copy now consistently states:
   - standard flow keeps decryption key in URL fragment
   - assignment email-notification flow includes key only to deliver usable emailed links
