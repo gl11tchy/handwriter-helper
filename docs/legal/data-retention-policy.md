@@ -17,4 +17,4 @@ This policy covers signed assignment payloads and encrypted report artifacts sto
 ## Notes
 - Reports are encrypted client-side before upload.
 - In the standard flow, decryption keys remain in the URL fragment and are not sent with report upload.
-- If assignment email notifications are enabled, the decryption key is included with report upload so emailed links can open the report.
+- If assignment email notifications are enabled, the decryption key is included with report upload only to deliver a usable emailed report link; encrypted report artifacts stored in R2 remain ciphertext plus metadata.

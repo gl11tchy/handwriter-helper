@@ -32,7 +32,7 @@ Use this runbook to triage and mitigate launch-critical failures. Always capture
   - Check provider status and request limits.
 - Mitigation:
   - Keep core grading flow active and disable optional Claude verification until stable.
-  - Log this as degraded optional feature, not full service outage.
+  - Log this as an optional feature operating in degraded mode, not a full service outage.
 
 ## R2 Degradation Playbook
 - Symptoms:

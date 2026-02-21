@@ -1,6 +1,6 @@
 // Report encryption using AES-GCM
 // In the standard flow the key stays in the URL fragment.
-// Email-notification flows may include the key during report upload.
+// In assignment email-notification flows the key is included only for email link delivery.
 
 const ALGORITHM = "AES-GCM";
 

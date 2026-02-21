@@ -1,7 +1,5 @@
 # Add AGENTS.md Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Add a concise `AGENTS.md` at the repository root that documents project-specific handoff and workflow expectations so future automation can stay consistent.
 
 **Architecture:** `handwriter-helper` is a React/Vite frontend + Cloudflare Worker backend. `AGENTS.md` will be a static project guidance file and will not affect runtime behavior.
@@ -10,7 +8,7 @@
 
 ---
 
-### Task 1: Add project AGENTS guidance
+## Task 1: Add project AGENTS guidance
 
 **Files:**
 - Create: `docs/plans/2026-02-21-add-agents-md.md` (this plan file)

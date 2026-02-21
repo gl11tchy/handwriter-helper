@@ -133,11 +133,12 @@ async function request<T>(
 
     if (!response.ok) {
       const errorPayload = (await response.json().catch(() => ({ error: "Request failed" }))) as ErrorResponsePayload;
+      const headerRequestId = response.headers.get("X-Request-Id") ?? undefined;
       throw new ApiError(errorPayload.error || "Request failed", {
         code: errorPayload.code,
         status: response.status,
         retryable: errorPayload.retryable ?? response.status >= 500,
-        requestId: errorPayload.requestId,
+        requestId: errorPayload.requestId ?? headerRequestId,
       });
     }
 

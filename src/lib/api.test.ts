@@ -5,11 +5,22 @@ import { api, ApiError, getApiErrorMessage, isRetryableApiError } from "./api";
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-function createMockResponse(data: unknown, ok = true, status = 200) {
+function createMockResponse(
+  data: unknown,
+  ok = true,
+  status = 200,
+  headers?: Record<string, string>
+) {
+  const normalizedHeaders = new Map(
+    Object.entries(headers ?? {}).map(([key, value]) => [key.toLowerCase(), value])
+  );
   return {
     ok,
     status,
     json: vi.fn().mockResolvedValue(data),
+    headers: {
+      get: (name: string) => normalizedHeaders.get(name.toLowerCase()) ?? null,
+    },
   };
 }
 
@@ -324,6 +335,9 @@ describe("api", () => {
         ok: false,
         status: 500,
         json: vi.fn().mockRejectedValue(new SyntaxError("Unexpected token")),
+        headers: {
+          get: vi.fn().mockReturnValue(null),
+        },
       });
 
       await expect(api.health()).rejects.toThrow("Request failed");
@@ -356,6 +370,7 @@ describe("api", () => {
 
       try {
         await api.ocr("image-data");
+        expect.fail("Expected api.ocr to throw ApiError");
       } catch (error) {
         expect(error).toBeInstanceOf(ApiError);
         const apiError = error as ApiError;
@@ -363,6 +378,27 @@ describe("api", () => {
         expect(apiError.retryable).toBe(true);
         expect(apiError.status).toBe(502);
       }
+    });
+
+    it("falls back to X-Request-Id response header when body omits requestId", async () => {
+      mockFetch.mockResolvedValue(
+        createMockResponse(
+          {
+            error: "OCR service failed. Please try again.",
+            code: "OCR_UPSTREAM_FAILURE",
+            retryable: true,
+          },
+          false,
+          502,
+          { "X-Request-Id": "req-from-header-123" }
+        )
+      );
+
+      await expect(api.ocr("image-data")).rejects.toMatchObject({
+        name: "ApiError",
+        code: "OCR_UPSTREAM_FAILURE",
+        requestId: "req-from-header-123",
+      });
     });
 
     it("maps known codes to actionable retry messages", () => {

@@ -87,9 +87,11 @@ A React/Vite frontend plus Cloudflare Worker backend for creating signed handwri
 ## Tests
 - Framework: Vitest + React/jsdom
 - Validation status (latest run):
-  - `npm run lint` → pass (warning-only findings)
-  - `npm run test` → pass
+  - `npm run lint` → pass
+  - `npm run test` → pass (`142/142`)
   - `npm run build` → pass
+  - `APP_URL='https://example.com/path' ... bash scripts/check-launch-env.sh` → pass
+  - `APP_URL='https://#frag' ... bash scripts/check-launch-env.sh` → fails as expected (exit 1)
 
 ## Deploy
 - Platform: Cloudflare Workers (`wrangler`)
@@ -103,7 +105,17 @@ A React/Vite frontend plus Cloudflare Worker backend for creating signed handwri
 ## Known Issues / TODOs
 - No `.github` workflow directory or deployment automation
 - No explicit auth/session layer for multi-tenant access; assignment access control is by signed payload + storage key
-- Existing lint warnings remain in `src/lib/pipeline/index.ts`, `src/routes/AssignmentRunner.tsx`, and `worker/index.ts`
+
+## Recent Changes (2026-02-21)
+- Follow-up review hardening applied for launch PR:
+  - assignment creation now handles R2 write failures with `ASSIGNMENT_STORAGE_FAILURE`
+  - OCR endpoint now validates missing/invalid `Content-Length` (`OCR_CONTENT_LENGTH_REQUIRED`, `OCR_INVALID_CONTENT_LENGTH`)
+  - API client falls back to `X-Request-Id` response header when error body omits `requestId`
+  - worker/api tests updated for new failure-path coverage and request-id behavior
+- Privacy/trust copy now consistently states:
+  - standard flow keeps decryption key in URL fragment
+  - assignment email-notification flow includes key only to deliver usable emailed links
+  - stored report artifacts remain encrypted blobs + metadata
 
 ## Maintenance
 - Keep this `STATE.md` updated **after every commit**.

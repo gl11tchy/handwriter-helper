@@ -47,7 +47,7 @@ validate_app_url() {
     return
   fi
 
-  if [[ "$value" =~ ^https://[^[:space:]]+$ ]]; then
+  if [[ "$value" =~ ^https://[^[:space:]/?#]+(:[0-9]+)?(/[^\#[:space:]]*)?$ ]]; then
     pass "APP_URL uses https:// and appears absolute"
   else
     fail "APP_URL must be an absolute https:// URL"

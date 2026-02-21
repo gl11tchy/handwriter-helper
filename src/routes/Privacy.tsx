@@ -36,7 +36,7 @@ export default function Privacy() {
           <ul className="text-muted-foreground space-y-1 list-disc list-inside">
             <li>Reports are encrypted in your browser before upload.</li>
             <li>In the standard flow, the decryption key stays in the URL fragment and is not sent with report upload.</li>
-            <li>If assignment email notifications are enabled, the decryption key is included with report upload so emailed links can open the report.</li>
+            <li>If assignment email notifications are enabled, the decryption key is included with report upload only so the backend can send a usable emailed report link; stored report blobs remain encrypted.</li>
           </ul>
         </section>
 

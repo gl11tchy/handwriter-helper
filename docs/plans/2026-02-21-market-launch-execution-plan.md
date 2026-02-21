@@ -1,7 +1,5 @@
 # Market Launch Execution Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-
 **Goal:** Ship a controlled, market-ready launch of Handwriter Helper with production reliability, trust transparency, and measurable funnel outcomes.
 
 **Architecture:** Keep the existing React/Vite frontend and Cloudflare Worker backend architecture. Focus execution on launch blockers: production config validation, reliability hardening, observability, trust/compliance surface, and launch funnel instrumentation.
@@ -10,7 +8,7 @@
 
 ---
 
-### Task 1: Launch Gate Baseline And Go/No-Go Criteria
+## Task 1: Launch Gate Baseline And Go/No-Go Criteria
 
 **Files:**
 - Create: `docs/ops/launch-gate.md`
@@ -39,7 +37,7 @@ Expected: all pass.
 
 ---
 
-### Task 2: Production Configuration Verification Script
+## Task 2: Production Configuration Verification Script
 
 **Files:**
 - Create: `scripts/check-launch-env.sh`
@@ -67,7 +65,7 @@ Expected: clear pass/fail output and non-zero exit on failure.
 
 ---
 
-### Task 3: End-To-End Smoke Harness For Critical User Flow
+## Task 3: End-To-End Smoke Harness For Critical User Flow
 
 **Files:**
 - Create: `scripts/smoke/smoke-report-flow.sh`
@@ -94,7 +92,7 @@ Expected: all steps pass in staging/prod before launch.
 
 ---
 
-### Task 4: Reliability Hardening For External Service Failures
+## Task 4: Reliability Hardening For External Service Failures
 
 **Files:**
 - Modify: `worker/index.ts`
@@ -122,7 +120,7 @@ Expected: all pass with new failure-path coverage.
 
 ---
 
-### Task 5: Observability And Incident Triage Surface
+## Task 5: Observability And Incident Triage Surface
 
 **Files:**
 - Modify: `worker/index.ts`
@@ -148,7 +146,7 @@ Expected: all pass with new failure-path coverage.
 
 ---
 
-### Task 6: Trust Surface Completion For Market Launch
+## Task 6: Trust Surface Completion For Market Launch
 
 **Files:**
 - Modify: `src/routes/Privacy.tsx`
@@ -173,7 +171,7 @@ Expected: no contradictory trust claims.
 
 ---
 
-### Task 7: Funnel Instrumentation For Pilot-To-Public Growth
+## Task 7: Funnel Instrumentation For Pilot-To-Public Growth
 
 **Files:**
 - Modify: `src/routes/Home.tsx`
@@ -204,7 +202,7 @@ Expected: no contradictory trust claims.
 
 ---
 
-### Task 8: Controlled Launch Execution
+## Task 8: Controlled Launch Execution
 
 **Files:**
 - Modify: `docs/ops/launch-gate.md`

@@ -85,17 +85,22 @@ function createMockEnv(overrides: Partial<Env> = {}): Env {
 }
 
 // Create mock request
+let requestCounter = 1;
 function createRequest(
   url: string,
   options: RequestInit = {}
 ): Request {
+  const headers = new Headers(options.headers ?? {});
+  headers.set("Content-Type", headers.get("Content-Type") ?? "application/json");
+  headers.set("CF-Connecting-IP", headers.get("CF-Connecting-IP") ?? `127.0.0.${requestCounter}`);
+  if (typeof options.body === "string" && !headers.has("Content-Length")) {
+    headers.set("Content-Length", String(options.body.length));
+  }
+  requestCounter = requestCounter >= 250 ? 1 : requestCounter + 1;
+
   return new Request(`https://example.com${url}`, {
-    headers: {
-      "Content-Type": "application/json",
-      "CF-Connecting-IP": "127.0.0.1",
-      ...options.headers,
-    },
     ...options,
+    headers,
   });
 }
 
@@ -480,6 +485,30 @@ describe("Worker", () => {
       expect(data.retryable).toBe(true);
     });
 
+    it("returns 503 when assignment storage fails during create", async () => {
+      const failingStorage = {
+        ...createMockR2(),
+        put: vi.fn().mockRejectedValue(new Error("R2 unavailable")),
+      } as unknown as R2Bucket;
+      const envWithFailingStorage = createMockEnv({ STORAGE: failingStorage });
+
+      const request = createRequest("/api/assignment", {
+        method: "POST",
+        body: JSON.stringify({
+          requiredLineCount: 5,
+          expectedStyle: "print",
+          expectedContent: { mode: "perLine", lines: ["Line 1"] },
+        }),
+      });
+
+      const response = await worker.fetch(request, envWithFailingStorage);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(503);
+      expect(data.code).toBe("ASSIGNMENT_STORAGE_FAILURE");
+      expect(data.retryable).toBe(true);
+    });
+
     it("verifies signature correctly when payload has all fields", async () => {
       // Create assignment with all optional fields
       const createResponse = await worker.fetch(
@@ -760,6 +789,21 @@ describe("Worker", () => {
       expect(response.status).toBe(503);
       expect(data.error).toBe("OCR service not configured");
       expect(data.code).toBe("OCR_SERVICE_UNAVAILABLE");
+    });
+
+    it("returns 411 when Content-Length header is missing", async () => {
+      const request = createRequest("/api/ocr", {
+        method: "POST",
+        headers: { "CF-Connecting-IP": "192.168.20.31" },
+        body: JSON.stringify({ imageB64: "test-image" }),
+      });
+      request.headers.delete("Content-Length");
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(411);
+      expect(data.code).toBe("OCR_CONTENT_LENGTH_REQUIRED");
     });
 
     it("returns structured retryable code on OCR upstream failure", async () => {

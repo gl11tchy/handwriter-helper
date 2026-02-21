@@ -617,7 +617,22 @@ export default {
       // OCR endpoint - uses Google Cloud Vision
       if (url.pathname === "/api/ocr" && request.method === "POST") {
         // Check content length (images can be large)
-        const contentLength = parseInt(request.headers.get("Content-Length") || "0");
+        const contentLengthHeader = request.headers.get("Content-Length");
+        if (!contentLengthHeader) {
+          return errorJson(411, corsHeaders, {
+            error: "Content-Length header is required",
+            code: "OCR_CONTENT_LENGTH_REQUIRED",
+            retryable: false,
+          }, requestId);
+        }
+        const contentLength = Number(contentLengthHeader);
+        if (!Number.isFinite(contentLength) || contentLength < 0) {
+          return errorJson(400, corsHeaders, {
+            error: "Content-Length header must be a valid non-negative number",
+            code: "OCR_INVALID_CONTENT_LENGTH",
+            retryable: false,
+          }, requestId);
+        }
         if (contentLength > MAX_PAYLOAD_SIZE) {
           return errorJson(413, corsHeaders, {
             error: `Payload too large. Maximum size is ${MAX_PAYLOAD_SIZE / (1024 * 1024)}MB.`,
@@ -778,9 +793,18 @@ export default {
 
         // Store in R2
         const stored: StoredAssignment = { payload, signature };
-        await env.STORAGE.put(`assignments/${assignmentId}.json`, JSON.stringify(stored), {
-          httpMetadata: { contentType: "application/json" },
-        });
+        try {
+          await env.STORAGE.put(`assignments/${assignmentId}.json`, JSON.stringify(stored), {
+            httpMetadata: { contentType: "application/json" },
+          });
+        } catch (storageError) {
+          logFailure(url.pathname, "assignment_storage_write_error", requestId, storageError);
+          return errorJson(503, corsHeaders, {
+            error: "Assignment storage is temporarily unavailable. Please try again.",
+            code: "ASSIGNMENT_STORAGE_FAILURE",
+            retryable: true,
+          }, requestId);
+        }
 
         return Response.json(
           { assignmentId, payload },

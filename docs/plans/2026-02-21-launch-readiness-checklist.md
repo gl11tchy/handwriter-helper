@@ -67,7 +67,7 @@ Proceed to `internal` immediately, then promote only when every P0 gate above is
 
 ### Step 1: Internal launch
 - [ ] Run `bash scripts/check-launch-env.sh` in production-like environment.
-- [ ] Run `BASE_URL=\"https://<deployed-url>\" bash scripts/smoke/smoke-report-flow.sh`.
+- [ ] Run `BASE_URL="https://<deployed-url>" bash scripts/smoke/smoke-report-flow.sh`.
 - [ ] Run `npm run lint && npm run test && npm run build`.
 - [ ] Collect 24h baseline error rate and capture request IDs for any failures.
 

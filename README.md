@@ -100,8 +100,8 @@ The script exits non-zero when required variables are missing/invalid.
 - Google Cloud Vision is used for OCR processing.
 - If enabled by deployment settings, uncertain line snippets may be sent to Anthropic Claude for secondary verification.
 - Reports are encrypted in your browser before upload.
-- In the standard flow, the decryption key stays in the URL fragment and is not sent with report upload.
-- If assignment email notifications are enabled, the decryption key is included with report upload so emailed links can open the report.
+- In the standard flow, the decryption key stays in the URL fragment (`#k=<key>`) and is not sent with report upload.
+- If assignment email notifications are enabled, the decryption key is included with report upload only so the backend can send a usable emailed report link; stored report objects remain ciphertext plus metadata.
 - Signed assignment payloads and encrypted reports are retained for up to 30 days.
 - Deletion requests are handled manually via support at `support@writinglines.com`.
 

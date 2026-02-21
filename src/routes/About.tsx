@@ -31,7 +31,7 @@ export default function About() {
           </ul>
           <p className="text-muted-foreground mt-2">
             Reports are encrypted in your browser before upload. In the standard flow, the decryption key stays in the URL fragment and is not sent with report upload.
-            If assignment email notifications are enabled, the decryption key is included with report upload so emailed links can open the report.
+            If assignment email notifications are enabled, the decryption key is included with report upload only so the backend can send a usable emailed report link; stored report blobs remain encrypted.
           </p>
           <p className="text-muted-foreground mt-2">
             Signed assignment payloads and encrypted reports are retained for up to 30 days. Deletion requests are handled manually via support at <span className="font-medium">support@writinglines.com</span>.

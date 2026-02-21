@@ -670,8 +670,8 @@ export default function AssignmentRunner() {
                     <AlertTitle>Important</AlertTitle>
                     <AlertDescription>
                       {payload?.notifyEmail
-                        ? "Your upload was processed by OCR services to generate this report. The decryption key was shared with the server so email delivery could include a working report link."
-                        : "Your upload was processed by OCR services to generate this report. The decryption key stays in the URL fragment and is not sent to the server in the standard flow."}
+                        ? "Your upload was processed by OCR services to generate this report. Because email notifications are enabled, the decryption key was included only so a usable report link could be emailed."
+                        : "Your upload was processed by OCR services to generate this report. In the standard flow, the decryption key stays in the URL fragment and is not sent to the server."}
                     </AlertDescription>
                   </Alert>
                 </CardContent>
