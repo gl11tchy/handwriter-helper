@@ -13,6 +13,8 @@ Last updated: 2026-02-21
 
 - Restored missing route component by adding `src/routes/Privacy.tsx`
 - Added regression test `src/routes/Privacy.test.ts` to ensure privacy page content renders
+- Updated privacy copy to document both key-handling flows:
+  default URL-fragment key handling and email-notification key-sharing exception
 - `/privacy` route is now functional again through existing app routing and nav links
 
 ## Known warnings

@@ -9,7 +9,12 @@ export default function Privacy() {
           <ul className="text-muted-foreground space-y-1 list-disc list-inside">
             <li>Images are processed in your browser and not uploaded by default</li>
             <li>Reports are encrypted in the browser before storage</li>
-            <li>Decryption keys stay in the URL fragment and are never sent to the server</li>
+            <li>Decryption keys stay in the URL fragment by default and are not sent to the server</li>
+            <li>
+              When email notifications are enabled, the key is included with the report upload so the
+              server can send a usable report link
+            </li>
+            <li>Report blobs remain encrypted in both flows</li>
           </ul>
         </section>
 
