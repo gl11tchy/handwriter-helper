@@ -30,8 +30,9 @@ import {
   encryptData,
   buildReportUrl,
 } from "@/lib/crypto/encryption";
+import { trackEvent } from "@/lib/analytics";
 import { runPipeline, type PipelineResult } from "@/lib/pipeline";
-import { api } from "@/lib/api";
+import { api, ApiError, getApiErrorMessage } from "@/lib/api";
 import type { AssignmentPayload, PipelineProgress, Report, Finding } from "@/types";
 
 type RunnerState =
@@ -63,6 +64,7 @@ export default function AssignmentRunner() {
   const [copied, setCopied] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [countdown, setCountdown] = useState<string | null>(null);
+  const [assignmentLoadAttempt, setAssignmentLoadAttempt] = useState(0);
 
   // Validate and parse due date safely
   const parsedDueDate = useMemo(() => {
@@ -106,10 +108,7 @@ export default function AssignmentRunner() {
   }, [parsedDueDate]);
 
   // Determine if assignment is past due
-  const isPastDue = useMemo(() => {
-    if (!parsedDueDate) return false;
-    return parsedDueDate.getTime() < new Date().getTime();
-  }, [parsedDueDate, countdown]); // countdown dependency ensures re-check
+  const isPastDue = parsedDueDate ? parsedDueDate.getTime() < new Date().getTime() : false;
 
   // Fetch assignment from server (with signature verification)
   useEffect(() => {
@@ -125,10 +124,9 @@ export default function AssignmentRunner() {
         setPayload(response.payload);
         setState("ready");
       } catch (e) {
-        const errorMessage = e instanceof Error ? e.message : "Failed to load assignment";
+        const errorMessage = getApiErrorMessage(e, "Failed to load assignment");
 
-        // Check if it's a tamper error
-        if (errorMessage.includes("modified") || errorMessage.includes("invalid")) {
+        if (e instanceof ApiError && e.code === "ASSIGNMENT_TAMPERED") {
           setError(errorMessage);
           setState("tampered");
         } else {
@@ -139,7 +137,7 @@ export default function AssignmentRunner() {
     };
 
     fetchAssignment();
-  }, [assignmentId]);
+  }, [assignmentId, assignmentLoadAttempt]);
 
   const handleFileSelect = useCallback((file: File) => {
     setSelectedFile(file);
@@ -153,6 +151,12 @@ export default function AssignmentRunner() {
 
   const handleRunPipeline = useCallback(async () => {
     if (!selectedFile || !payload || !assignmentId) return;
+
+    trackEvent("submission_started", {
+      source: "assignment_runner",
+      assignmentId,
+      fileType: selectedFile.type || "unknown",
+    });
 
     setState("processing");
     setProgress(null);
@@ -177,6 +181,12 @@ export default function AssignmentRunner() {
       }
 
       setResult(pipelineResult);
+      trackEvent("grading_completed", {
+        source: "assignment_runner",
+        assignmentId,
+        findingsCount: pipelineResult.findings.length,
+        totalScore: pipelineResult.score.overall,
+      });
 
       // Auto-generate report link
       setState("generating_link");
@@ -230,6 +240,11 @@ export default function AssignmentRunner() {
         const url = buildReportUrl(reportId, keyB64);
         setReportLink(url);
         setEmailSent(wasEmailSent || false);
+        trackEvent("report_link_generated", {
+          source: "assignment_runner",
+          assignmentId,
+          reportId,
+        });
         setState("results");
       } catch (linkError) {
         // Don't show error if user cancelled
@@ -247,7 +262,7 @@ export default function AssignmentRunner() {
       if (e instanceof Error && e.message === "Pipeline cancelled") {
         setState("uploading");
       } else {
-        setError(e instanceof Error ? e.message : "Processing failed");
+        setError(getApiErrorMessage(e, "Processing failed"));
         setState("uploading"); // Keep file selected so user can retry without re-uploading
       }
     }
@@ -304,9 +319,14 @@ export default function AssignmentRunner() {
       const url = buildReportUrl(reportId, keyB64);
       setReportLink(url);
       setEmailSent(wasEmailSent || false);
+      trackEvent("report_link_generated", {
+        source: "assignment_runner",
+        assignmentId,
+        reportId,
+      });
       setState("results");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to generate report link");
+      setError(getApiErrorMessage(e, "Failed to generate report link"));
       setState("results");
     }
   }, [result, selectedFile, payload, assignmentId]);
@@ -337,6 +357,12 @@ export default function AssignmentRunner() {
     setActiveResultTab("viewer");
   }, []);
 
+  const retryAssignmentLoad = useCallback(() => {
+    setError(null);
+    setState("loading");
+    setAssignmentLoadAttempt((attempt) => attempt + 1);
+  }, []);
+
   if (state === "loading") {
     return (
       <div className="container py-8">
@@ -359,7 +385,11 @@ export default function AssignmentRunner() {
               <CardTitle>Assignment Not Found</CardTitle>
               <CardDescription>{error || "This assignment doesn't exist or the link is incorrect."}</CardDescription>
             </CardHeader>
-            <CardContent className="flex justify-center">
+            <CardContent className="flex justify-center gap-3">
+              <Button variant="outline" onClick={retryAssignmentLoad}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Retry Load
+              </Button>
               <Button asChild>
                 <Link to="/">Return Home</Link>
               </Button>
@@ -518,6 +548,13 @@ export default function AssignmentRunner() {
                 onFileSelect={handleFileSelect}
               />
 
+              <Alert>
+                <AlertTitle>Data handling</AlertTitle>
+                <AlertDescription>
+                  Uploaded files are sent to OCR services for grading. Reports are encrypted in your browser before storage.
+                </AlertDescription>
+              </Alert>
+
               {error && (
                 <Alert variant="destructive">
                   <AlertTriangle className="h-4 w-4" />
@@ -633,8 +670,8 @@ export default function AssignmentRunner() {
                     <AlertTitle>Important</AlertTitle>
                     <AlertDescription>
                       {payload?.notifyEmail
-                        ? "The decryption key was shared with the server for email notification. Only people with this link can view the report."
-                        : "The decryption key is in the URL fragment and is not sent to the server. Only people with this exact link can view the report."}
+                        ? "Your upload was processed by OCR services to generate this report. Because email notifications are enabled, the decryption key was included only so a usable report link could be emailed."
+                        : "Your upload was processed by OCR services to generate this report. In the standard flow, the decryption key stays in the URL fragment and is not sent to the server."}
                     </AlertDescription>
                   </Alert>
                 </CardContent>

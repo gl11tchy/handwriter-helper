@@ -9,6 +9,56 @@ const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const RATE_LIMIT_MAX = 30; // requests per window
 const MAX_PAYLOAD_SIZE = 25 * 1024 * 1024; // 25MB
 
+interface ApiErrorBody {
+  error: string;
+  code: string;
+  retryable: boolean;
+  tampered?: boolean;
+  requestId?: string;
+}
+
+function errorJson(
+  status: number,
+  headers: HeadersInit,
+  body: ApiErrorBody,
+  requestId: string
+): Response {
+  const responseHeaders = new Headers(headers);
+  responseHeaders.set("X-Request-Id", requestId);
+
+  return Response.json(
+    { ...body, requestId },
+    { status, headers: responseHeaders }
+  );
+}
+
+function isUpstreamTimeoutError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  return error.name === "AbortError" || message.includes("timeout");
+}
+
+function getRequestId(request: Request): string {
+  const fromHeader = request.headers.get("X-Request-Id")?.trim();
+  if (fromHeader) return fromHeader;
+  return `req-${generateId()}`;
+}
+
+function logFailure(route: string, failureType: string, requestId: string, error?: unknown): void {
+  const payload: Record<string, string> = {
+    route,
+    failureType,
+    requestId,
+  };
+
+  if (error instanceof Error) {
+    payload.errorName = error.name;
+    payload.errorMessage = error.message;
+  }
+
+  console.error("api_failure", payload);
+}
+
 function checkRateLimit(ip: string): boolean {
   const now = Date.now();
   const entry = rateLimitMap.get(ip);
@@ -505,11 +555,13 @@ async function callGoogleVisionOCR(imageB64: string, apiKey: string): Promise<Oc
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const requestId = getRequestId(request);
     // Default CORS headers for error responses
     const defaultCorsHeaders: Record<string, string> = {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, X-Request-Id",
+      "Access-Control-Expose-Headers": "X-Request-Id",
     };
 
     try {
@@ -520,77 +572,111 @@ export default {
       const corsHeaders: Record<string, string> = {
         "Access-Control-Allow-Origin": env.APP_URL || "*",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type, X-Request-Id",
         "Access-Control-Max-Age": "86400",
+        "Access-Control-Expose-Headers": "X-Request-Id",
+      };
+      const responseHeaders: Record<string, string> = {
+        ...corsHeaders,
+        "X-Request-Id": requestId,
       };
 
       // Handle preflight
       if (request.method === "OPTIONS") {
-        return new Response(null, { headers: corsHeaders });
+        return new Response(null, { headers: responseHeaders });
       }
 
       // Apply rate limiting to all API routes
       if (url.pathname.startsWith("/api/")) {
         if (!checkRateLimit(clientIP)) {
-          return Response.json(
-            { error: "Too many requests. Please try again later." },
-            { status: 429, headers: corsHeaders }
-          );
+          return errorJson(429, corsHeaders, {
+            error: "Too many requests. Please try again later.",
+            code: "RATE_LIMITED",
+            retryable: true,
+          }, requestId);
         }
       }
 
       // Only handle /api/* routes - serve static assets for frontend routes
       if (!url.pathname.startsWith("/api/")) {
         if (!env.ASSETS) {
-          console.error("ASSETS binding not configured");
+          logFailure(url.pathname, "assets_binding_missing", requestId);
           return new Response("Static assets not configured", { status: 503 });
         }
         return env.ASSETS.fetch(request);
       }
+
       // Health check
       if (url.pathname === "/api/health") {
         return Response.json(
           { status: "ok", timestamp: new Date().toISOString() },
-          { headers: corsHeaders }
+          { headers: responseHeaders }
         );
       }
 
       // OCR endpoint - uses Google Cloud Vision
       if (url.pathname === "/api/ocr" && request.method === "POST") {
         // Check content length (images can be large)
-        const contentLength = parseInt(request.headers.get("Content-Length") || "0");
+        const contentLengthHeader = request.headers.get("Content-Length");
+        if (!contentLengthHeader) {
+          return errorJson(411, corsHeaders, {
+            error: "Content-Length header is required",
+            code: "OCR_CONTENT_LENGTH_REQUIRED",
+            retryable: false,
+          }, requestId);
+        }
+        const contentLength = Number(contentLengthHeader);
+        if (!Number.isFinite(contentLength) || contentLength < 0) {
+          return errorJson(400, corsHeaders, {
+            error: "Content-Length header must be a valid non-negative number",
+            code: "OCR_INVALID_CONTENT_LENGTH",
+            retryable: false,
+          }, requestId);
+        }
         if (contentLength > MAX_PAYLOAD_SIZE) {
-          return Response.json(
-            { error: `Payload too large. Maximum size is ${MAX_PAYLOAD_SIZE / (1024 * 1024)}MB.` },
-            { status: 413, headers: corsHeaders }
-          );
+          return errorJson(413, corsHeaders, {
+            error: `Payload too large. Maximum size is ${MAX_PAYLOAD_SIZE / (1024 * 1024)}MB.`,
+            code: "OCR_PAYLOAD_TOO_LARGE",
+            retryable: false,
+          }, requestId);
         }
 
         if (!env.GOOGLE_CLOUD_API_KEY) {
-          return Response.json(
-            { error: "OCR service not configured" },
-            { status: 503, headers: corsHeaders }
-          );
+          return errorJson(503, corsHeaders, {
+            error: "OCR service not configured",
+            code: "OCR_SERVICE_UNAVAILABLE",
+            retryable: false,
+          }, requestId);
         }
 
         const body = await request.json() as OcrRequest;
 
         if (!body.imageB64) {
-          return Response.json(
-            { error: "Missing imageB64 in request body" },
-            { status: 400, headers: corsHeaders }
-          );
+          return errorJson(400, corsHeaders, {
+            error: "Missing imageB64 in request body",
+            code: "OCR_INVALID_REQUEST",
+            retryable: false,
+          }, requestId);
         }
 
         try {
           const result = await callGoogleVisionOCR(body.imageB64, env.GOOGLE_CLOUD_API_KEY);
-          return Response.json(result, { headers: corsHeaders });
+          return Response.json(result, { headers: responseHeaders });
         } catch (error) {
-          console.error("OCR error:", error);
-          return Response.json(
-            { error: error instanceof Error ? error.message : "OCR processing failed" },
-            { status: 500, headers: corsHeaders }
-          );
+          logFailure(url.pathname, "ocr_upstream_failure", requestId, error);
+          if (isUpstreamTimeoutError(error)) {
+            return errorJson(504, corsHeaders, {
+              error: "OCR service timed out. Please try again.",
+              code: "OCR_UPSTREAM_TIMEOUT",
+              retryable: true,
+            }, requestId);
+          }
+
+          return errorJson(502, corsHeaders, {
+            error: "OCR service failed. Please try again.",
+            code: "OCR_UPSTREAM_FAILURE",
+            retryable: true,
+          }, requestId);
         }
       }
 
@@ -599,60 +685,75 @@ export default {
         // Check content length (images can be large)
         const contentLengthHeader = request.headers.get("Content-Length");
         if (!contentLengthHeader) {
-          return Response.json(
-            { error: "Content-Length header is required" },
-            { status: 411, headers: corsHeaders }
-          );
+          return errorJson(411, corsHeaders, {
+            error: "Content-Length header is required",
+            code: "CLAUDE_CONTENT_LENGTH_REQUIRED",
+            retryable: false,
+          }, requestId);
         }
         const contentLength = Number(contentLengthHeader);
         if (!Number.isFinite(contentLength) || contentLength < 0) {
-          return Response.json(
-            { error: "Content-Length header must be a valid non-negative number" },
-            { status: 400, headers: corsHeaders }
-          );
+          return errorJson(400, corsHeaders, {
+            error: "Content-Length header must be a valid non-negative number",
+            code: "CLAUDE_INVALID_CONTENT_LENGTH",
+            retryable: false,
+          }, requestId);
         }
         if (contentLength > MAX_PAYLOAD_SIZE) {
-          return Response.json(
-            { error: `Payload too large. Maximum size is ${MAX_PAYLOAD_SIZE / (1024 * 1024)}MB.` },
-            { status: 413, headers: corsHeaders }
-          );
+          return errorJson(413, corsHeaders, {
+            error: `Payload too large. Maximum size is ${MAX_PAYLOAD_SIZE / (1024 * 1024)}MB.`,
+            code: "CLAUDE_PAYLOAD_TOO_LARGE",
+            retryable: false,
+          }, requestId);
         }
 
         if (!env.ANTHROPIC_API_KEY) {
-          return Response.json(
-            { error: "Claude verification service not configured" },
-            { status: 503, headers: corsHeaders }
-          );
+          return errorJson(503, corsHeaders, {
+            error: "Claude verification service not configured",
+            code: "CLAUDE_SERVICE_UNAVAILABLE",
+            retryable: false,
+          }, requestId);
         }
 
         const body = await request.json() as ClaudeVerificationRequest;
 
         if (!body.imageB64 || !body.expectedText) {
-          return Response.json(
-            { error: "Missing required fields: imageB64 and expectedText are required" },
-            { status: 400, headers: corsHeaders }
-          );
+          return errorJson(400, corsHeaders, {
+            error: "Missing required fields: imageB64 and expectedText are required",
+            code: "CLAUDE_INVALID_REQUEST",
+            retryable: false,
+          }, requestId);
         }
 
         try {
           const result = await callClaudeVision(body.imageB64, body.expectedText, env.ANTHROPIC_API_KEY);
-          return Response.json(result, { headers: corsHeaders });
+          return Response.json(result, { headers: responseHeaders });
         } catch (error) {
-          console.error("Claude verification error:", error);
-          return Response.json(
-            { error: error instanceof Error ? error.message : "Claude verification failed" },
-            { status: 500, headers: corsHeaders }
-          );
+          logFailure(url.pathname, "claude_upstream_failure", requestId, error);
+          if (isUpstreamTimeoutError(error)) {
+            return errorJson(504, corsHeaders, {
+              error: "Claude verification timed out. Please try again.",
+              code: "CLAUDE_UPSTREAM_TIMEOUT",
+              retryable: true,
+            }, requestId);
+          }
+
+          return errorJson(502, corsHeaders, {
+            error: "Claude verification failed. Please try again.",
+            code: "CLAUDE_UPSTREAM_FAILURE",
+            retryable: true,
+          }, requestId);
         }
       }
 
       // Create assignment - signs and stores it
       if (url.pathname === "/api/assignment" && request.method === "POST") {
         if (!env.SIGNING_SECRET) {
-          return Response.json(
-            { error: "Signing service not configured" },
-            { status: 503, headers: corsHeaders }
-          );
+          return errorJson(503, corsHeaders, {
+            error: "Signing service not configured",
+            code: "SIGNING_SERVICE_UNAVAILABLE",
+            retryable: false,
+          }, requestId);
         }
 
         const body = await request.json() as CreateAssignmentRequest;
@@ -664,10 +765,11 @@ export default {
           !body.expectedContent?.lines ||
           body.expectedContent.lines.length === 0
         ) {
-          return Response.json(
-            { error: "Missing required fields" },
-            { status: 400, headers: corsHeaders }
-          );
+          return errorJson(400, corsHeaders, {
+            error: "Missing required fields",
+            code: "ASSIGNMENT_INVALID_REQUEST",
+            retryable: false,
+          }, requestId);
         }
 
         const assignmentId = generateId();
@@ -691,13 +793,22 @@ export default {
 
         // Store in R2
         const stored: StoredAssignment = { payload, signature };
-        await env.STORAGE.put(`assignments/${assignmentId}.json`, JSON.stringify(stored), {
-          httpMetadata: { contentType: "application/json" },
-        });
+        try {
+          await env.STORAGE.put(`assignments/${assignmentId}.json`, JSON.stringify(stored), {
+            httpMetadata: { contentType: "application/json" },
+          });
+        } catch (storageError) {
+          logFailure(url.pathname, "assignment_storage_write_error", requestId, storageError);
+          return errorJson(503, corsHeaders, {
+            error: "Assignment storage is temporarily unavailable. Please try again.",
+            code: "ASSIGNMENT_STORAGE_FAILURE",
+            retryable: true,
+          }, requestId);
+        }
 
         return Response.json(
           { assignmentId, payload },
-          { status: 201, headers: corsHeaders }
+          { status: 201, headers: responseHeaders }
         );
       }
 
@@ -705,115 +816,132 @@ export default {
       if (url.pathname.startsWith("/api/assignment/") && request.method === "GET") {
         const assignmentId = url.pathname.replace("/api/assignment/", "");
 
-        // Log for debugging (visible in Cloudflare logs only)
-        console.log("GET assignment request:", { assignmentId, pathname: url.pathname });
-
         // Validate assignment ID format and length (max 100 chars to prevent abuse)
         if (!/^[a-z0-9-]+$/i.test(assignmentId) || assignmentId.length > 100) {
-          console.log("Invalid assignment ID format:", assignmentId);
-          return Response.json(
-            { error: "Invalid assignment ID format" },
-            { status: 400, headers: corsHeaders }
-          );
+          return errorJson(400, corsHeaders, {
+            error: "Invalid assignment ID format",
+            code: "ASSIGNMENT_INVALID_ID",
+            retryable: false,
+          }, requestId);
         }
 
         let object;
         try {
           object = await env.STORAGE.get(`assignments/${assignmentId}.json`);
-          console.log("Storage.get result:", { found: !!object, assignmentId });
         } catch (storageError) {
-          console.error("Storage error fetching assignment:", storageError);
-          return Response.json(
-            { error: "Failed to fetch assignment from storage" },
-            { status: 500, headers: corsHeaders }
-          );
+          logFailure(url.pathname, "assignment_storage_fetch_error", requestId, storageError);
+          return errorJson(503, corsHeaders, {
+            error: "Failed to fetch assignment from storage",
+            code: "ASSIGNMENT_STORAGE_FAILURE",
+            retryable: true,
+          }, requestId);
         }
 
         if (!object) {
-          console.log("Assignment not found in storage:", assignmentId);
-          return Response.json(
-            { error: "Assignment not found" },
-            { status: 404, headers: corsHeaders }
-          );
+          return errorJson(404, corsHeaders, {
+            error: "Assignment not found",
+            code: "ASSIGNMENT_NOT_FOUND",
+            retryable: false,
+          }, requestId);
         }
 
         let stored: StoredAssignment;
         try {
           stored = await object.json() as StoredAssignment;
-          console.log("Parsed stored assignment:", { hasPayload: !!stored?.payload, hasSignature: !!stored?.signature });
         } catch (parseError) {
-          console.error("JSON parse error for assignment:", parseError);
-          return Response.json(
-            { error: "Assignment data is corrupted" },
-            { status: 500, headers: corsHeaders }
-          );
+          logFailure(url.pathname, "assignment_data_parse_error", requestId, parseError);
+          return errorJson(500, corsHeaders, {
+            error: "Assignment data is corrupted",
+            code: "ASSIGNMENT_DATA_CORRUPTED",
+            retryable: false,
+          }, requestId);
         }
 
         // Validate stored data structure
         if (!stored || !stored.payload || !stored.signature) {
-          console.error("Invalid stored assignment structure:", { hasPayload: !!stored?.payload, hasSignature: !!stored?.signature });
-          return Response.json(
-            { error: "Assignment data is incomplete or corrupted" },
-            { status: 500, headers: corsHeaders }
-          );
+          logFailure(url.pathname, "assignment_data_invalid_structure", requestId);
+          return errorJson(500, corsHeaders, {
+            error: "Assignment data is incomplete or corrupted",
+            code: "ASSIGNMENT_DATA_CORRUPTED",
+            retryable: false,
+          }, requestId);
         }
 
         // Verify signature
         if (!env.SIGNING_SECRET) {
-          console.error("SIGNING_SECRET not configured");
-          return Response.json(
-            { error: "Signing service not configured" },
-            { status: 503, headers: corsHeaders }
-          );
+          logFailure(url.pathname, "signing_secret_missing", requestId);
+          return errorJson(503, corsHeaders, {
+            error: "Signing service not configured",
+            code: "SIGNING_SERVICE_UNAVAILABLE",
+            retryable: false,
+          }, requestId);
         }
 
         let valid: boolean;
         try {
           const payloadJson = JSON.stringify(stored.payload);
           valid = await verifySignature(payloadJson, stored.signature, env.SIGNING_SECRET);
-          console.log("Signature verification result:", { valid });
         } catch (verifyError) {
-          console.error("Signature verification error:", verifyError);
-          return Response.json(
-            { error: "This assignment link is invalid or has been modified. Please request a new link.", tampered: true },
-            { status: 403, headers: corsHeaders }
-          );
+          logFailure(url.pathname, "assignment_signature_verification_error", requestId, verifyError);
+          return errorJson(403, corsHeaders, {
+            error: "This assignment link is invalid or has been modified. Please request a new link.",
+            code: "ASSIGNMENT_TAMPERED",
+            retryable: false,
+            tampered: true,
+          }, requestId);
         }
 
         if (!valid) {
-          console.log("Signature verification failed - tampered data");
-          return Response.json(
-            { error: "This assignment link is invalid or has been modified. Please request a new link.", tampered: true },
-            { status: 403, headers: corsHeaders }
-          );
+          return errorJson(403, corsHeaders, {
+            error: "This assignment link is invalid or has been modified. Please request a new link.",
+            code: "ASSIGNMENT_TAMPERED",
+            retryable: false,
+            tampered: true,
+          }, requestId);
         }
 
-        console.log("Assignment retrieved successfully:", assignmentId);
         return Response.json(
           { payload: stored.payload, verified: true },
-          { headers: corsHeaders }
+          { headers: responseHeaders }
         );
       }
 
       // Upload encrypted report
       if (url.pathname === "/api/report" && request.method === "POST") {
         // Check content length
-        const contentLength = parseInt(request.headers.get("Content-Length") || "0");
+        const contentLengthHeader = request.headers.get("Content-Length");
+        if (!contentLengthHeader) {
+          return errorJson(411, corsHeaders, {
+            error: "Content-Length header is required",
+            code: "REPORT_CONTENT_LENGTH_REQUIRED",
+            retryable: false,
+          }, requestId);
+        }
+        const contentLength = Number(contentLengthHeader);
+        if (!Number.isFinite(contentLength) || contentLength < 0) {
+          return errorJson(400, corsHeaders, {
+            error: "Content-Length header must be a valid non-negative number",
+            code: "REPORT_INVALID_CONTENT_LENGTH",
+            retryable: false,
+          }, requestId);
+        }
         if (contentLength > MAX_PAYLOAD_SIZE) {
-          return Response.json(
-            { error: `Payload too large. Maximum size is ${MAX_PAYLOAD_SIZE / (1024 * 1024)}MB.` },
-            { status: 413, headers: corsHeaders }
-          );
+          return errorJson(413, corsHeaders, {
+            error: `Payload too large. Maximum size is ${MAX_PAYLOAD_SIZE / (1024 * 1024)}MB.`,
+            code: "REPORT_PAYLOAD_TOO_LARGE",
+            retryable: false,
+          }, requestId);
         }
 
         const body = await request.json() as UploadRequest;
 
         // Validate request
         if (!body.ciphertextB64 || !body.nonceB64 || !body.meta) {
-          return Response.json(
-            { error: "Invalid request body" },
-            { status: 400, headers: corsHeaders }
-          );
+          return errorJson(400, corsHeaders, {
+            error: "Invalid request body",
+            code: "REPORT_INVALID_REQUEST",
+            retryable: false,
+          }, requestId);
         }
 
         // Generate report ID
@@ -826,25 +954,34 @@ export default {
           meta: body.meta,
         });
 
-        await env.STORAGE.put(`reports/${reportId}.json.enc`, data, {
-          httpMetadata: {
-            contentType: "application/json",
-          },
-          customMetadata: {
-            createdAt: body.meta.createdAt,
-            size: String(body.meta.size),
-          },
-        });
+        try {
+          await env.STORAGE.put(`reports/${reportId}.json.enc`, data, {
+            httpMetadata: {
+              contentType: "application/json",
+            },
+            customMetadata: {
+              createdAt: body.meta.createdAt,
+              size: String(body.meta.size),
+            },
+          });
+        } catch (storageError) {
+          logFailure(url.pathname, "report_storage_write_error", requestId, storageError);
+          return errorJson(503, corsHeaders, {
+            error: "Report storage is temporarily unavailable. Please try again.",
+            code: "REPORT_STORAGE_FAILURE",
+            retryable: true,
+          }, requestId);
+        }
 
         // Send email notification if assignment has notifyEmail configured
         let emailSent = false;
         if (body.assignmentId && body.encryptionKey && env.RESEND_API_KEY) {
           // Validate assignmentId format to prevent path traversal
           if (!/^[a-z0-9-]+$/i.test(body.assignmentId)) {
-            console.error("Invalid assignmentId format, skipping email");
+            logFailure(url.pathname, "report_email_invalid_assignment_id", requestId);
           // Validate encryptionKey is valid base64url to prevent injection
           } else if (!isValidBase64Url(body.encryptionKey)) {
-            console.error("Invalid encryptionKey format, skipping email");
+            logFailure(url.pathname, "report_email_invalid_encryption_key", requestId);
           } else {
             try {
               const assignmentObject = await env.STORAGE.get(`assignments/${body.assignmentId}.json`);
@@ -864,7 +1001,7 @@ export default {
                 }
               }
             } catch (emailError) {
-              console.error("Error sending notification email:", emailError);
+              logFailure(url.pathname, "report_notification_email_error", requestId, emailError);
               // Don't fail the request if email fails
             }
           }
@@ -872,7 +1009,7 @@ export default {
 
         return Response.json(
           { reportId, emailSent },
-          { status: 201, headers: corsHeaders }
+          { status: 201, headers: responseHeaders }
         );
       }
 
@@ -882,42 +1019,70 @@ export default {
 
         // Validate report ID format and length (max 100 chars to prevent abuse)
         if (!/^[a-z0-9-]+$/i.test(reportId) || reportId.length > 100) {
-          return Response.json(
-            { error: "Invalid report ID" },
-            { status: 400, headers: corsHeaders }
-          );
+          return errorJson(400, corsHeaders, {
+            error: "Invalid report ID",
+            code: "REPORT_INVALID_ID",
+            retryable: false,
+          }, requestId);
         }
 
-        const object = await env.STORAGE.get(`reports/${reportId}.json.enc`);
+        let object;
+        try {
+          object = await env.STORAGE.get(`reports/${reportId}.json.enc`);
+        } catch (storageError) {
+          logFailure(url.pathname, "report_storage_read_error", requestId, storageError);
+          return errorJson(503, corsHeaders, {
+            error: "Report storage is temporarily unavailable. Please try again.",
+            code: "REPORT_STORAGE_FAILURE",
+            retryable: true,
+          }, requestId);
+        }
 
         if (!object) {
-          return Response.json(
-            { error: "Report not found" },
-            { status: 404, headers: corsHeaders }
-          );
+          return errorJson(404, corsHeaders, {
+            error: "Report not found",
+            code: "REPORT_NOT_FOUND",
+            retryable: false,
+          }, requestId);
         }
 
-        const data = await object.text();
-        const parsed = JSON.parse(data) as {
+        let parsed: {
           ciphertextB64: string;
           nonceB64: string;
           meta: ReportMeta;
         };
+        try {
+          const data = await object.text();
+          parsed = JSON.parse(data) as {
+            ciphertextB64: string;
+            nonceB64: string;
+            meta: ReportMeta;
+          };
+        } catch (parseError) {
+          logFailure(url.pathname, "report_data_parse_error", requestId, parseError);
+          return errorJson(500, corsHeaders, {
+            error: "Report data is corrupted",
+            code: "REPORT_DATA_CORRUPTED",
+            retryable: false,
+          }, requestId);
+        }
 
-        return Response.json(parsed, { headers: corsHeaders });
+        return Response.json(parsed, { headers: responseHeaders });
       }
 
       // Not found
-      return Response.json(
-        { error: "Not found" },
-        { status: 404, headers: corsHeaders }
-      );
+      return errorJson(404, corsHeaders, {
+        error: "Not found",
+        code: "ROUTE_NOT_FOUND",
+        retryable: false,
+      }, requestId);
     } catch (error) {
-      console.error("Worker error:", error);
-      return Response.json(
-        { error: "Internal server error" },
-        { status: 500, headers: defaultCorsHeaders }
-      );
+      logFailure("/api/*", "worker_unhandled_error", requestId, error);
+      return errorJson(500, defaultCorsHeaders, {
+        error: "Internal server error",
+        code: "INTERNAL_SERVER_ERROR",
+        retryable: true,
+      }, requestId);
     }
   },
 } satisfies ExportedHandler<Env>;

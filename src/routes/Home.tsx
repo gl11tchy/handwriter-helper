@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
 import { Plus, Copy, Check, ChevronRight, CheckCircle2, Upload, Play, RotateCcw, ExternalLink, AlertTriangle, FileCheck, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +9,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { api } from "@/lib/api";
+import { api, getApiErrorMessage } from "@/lib/api";
 import { runPipeline, type PipelineResult } from "@/lib/pipeline";
 import { UploadDropzone } from "@/components/upload-dropzone";
 import { ProgressStepper } from "@/components/progress-stepper";
@@ -20,6 +21,7 @@ import {
   encryptData,
   buildReportUrl,
 } from "@/lib/crypto/encryption";
+import { trackEvent } from "@/lib/analytics";
 import type { HandwritingStyle, PaperType, NumberingFormat, AssignmentPayload, PipelineProgress, Report, Finding } from "@/types";
 
 // Simple email validation regex
@@ -104,8 +106,13 @@ export default function Home() {
 
       setAssignmentId(response.assignmentId);
       setWizardStep(2);
+      trackEvent("assignment_created", {
+        assignmentId: response.assignmentId,
+        requiredLineCount: lineCount,
+        expectedStyle,
+      });
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : "Failed to create assignment");
+      setCreateError(getApiErrorMessage(e, "Failed to create assignment"));
     } finally {
       setIsGenerating(false);
     }
@@ -161,6 +168,11 @@ export default function Home() {
   const handleRunGrade = useCallback(async () => {
     if (!gradeFile || !gradeExpectedText.trim()) return;
 
+    trackEvent("submission_started", {
+      source: "home_quick_grade",
+      fileType: gradeFile.type || "unknown",
+    });
+
     setGradeState("processing");
     setGradeProgress(null);
     setGradeResult(null);
@@ -198,6 +210,11 @@ export default function Home() {
 
       setGradeResult(result);
       setGradeState("results");
+      trackEvent("grading_completed", {
+        source: "home_quick_grade",
+        findingsCount: result.findings.length,
+        totalScore: result.score.overall,
+      });
     } catch (e) {
       // Check if this controller was aborted (not a different one)
       if (controller.signal.aborted) {
@@ -207,7 +224,7 @@ export default function Home() {
       if (e instanceof Error && e.message === "Pipeline cancelled") {
         setGradeState("input");
       } else {
-        setGradeError(e instanceof Error ? e.message : "Grading failed");
+        setGradeError(getApiErrorMessage(e, "Grading failed"));
         setGradeState("input");
       }
     }
@@ -258,8 +275,12 @@ export default function Home() {
 
       const url = buildReportUrl(reportId, keyB64);
       setReportLink(url);
+      trackEvent("report_link_generated", {
+        source: "home_quick_grade",
+        reportId,
+      });
     } catch (e) {
-      setGradeError(e instanceof Error ? e.message : "Failed to generate report link");
+      setGradeError(getApiErrorMessage(e, "Failed to generate report link"));
     } finally {
       setIsGeneratingReport(false);
     }
@@ -324,6 +345,13 @@ export default function Home() {
                 Upload & Grade
               </Button>
             </div>
+            <p className="text-sm text-muted-foreground">
+              Uploads are processed for OCR grading. See{" "}
+              <Link to="/privacy" className="underline underline-offset-4 hover:text-foreground">
+                Privacy & Data Handling
+              </Link>
+              .
+            </p>
           </div>
         </div>
       </section>
@@ -577,6 +605,13 @@ export default function Home() {
               </div>
 
               <UploadDropzone onFileSelect={handleFileSelect} />
+
+              <Alert>
+                <AlertTitle>Data handling</AlertTitle>
+                <AlertDescription>
+                  Uploaded files are sent to OCR services for grading. Generated reports are encrypted in your browser before upload.
+                </AlertDescription>
+              </Alert>
 
               {gradeFile && (
                 <div className="text-sm text-muted-foreground">

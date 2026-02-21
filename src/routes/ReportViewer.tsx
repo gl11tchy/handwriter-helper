@@ -17,7 +17,8 @@ import { AnnotatedViewer } from "@/components/annotated-viewer";
 import { FindingsTable } from "@/components/findings-table";
 import { ScoreCard } from "@/components/score-card";
 import { importKeyFromBase64, decryptData, extractKeyFromFragment } from "@/lib/crypto/encryption";
-import { api } from "@/lib/api";
+import { api, getApiErrorMessage, isRetryableApiError } from "@/lib/api";
+import { trackEvent } from "@/lib/analytics";
 import type { Report, Finding } from "@/types";
 
 type ViewerState = "loading" | "error" | "ready";
@@ -86,11 +87,14 @@ export default function ReportViewer() {
   const [report, setReport] = useState<Report | null>(null);
   const [selectedFindingId, setSelectedFindingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("overview");
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [retryableError, setRetryableError] = useState(false);
 
   useEffect(() => {
     const loadReport = async () => {
       if (!reportId) {
         setError("No report ID provided");
+        setRetryableError(false);
         setState("error");
         return;
       }
@@ -99,6 +103,7 @@ export default function ReportViewer() {
       const keyB64 = extractKeyFromFragment();
       if (!keyB64) {
         setError("No decryption key found in URL");
+        setRetryableError(false);
         setState("error");
         return;
       }
@@ -126,24 +131,30 @@ export default function ReportViewer() {
         reportData.reportId = reportId;
 
         setReport(reportData);
+        trackEvent("report_viewed", {
+          reportId,
+          findingsCount: reportData.findings.length,
+          totalScore: reportData.score.overall,
+        });
         setState("ready");
       } catch (e) {
         console.error("Failed to load report:", e);
-        if (e instanceof Error && e.message.includes("404")) {
-          setError("Report not found");
-        } else if (e instanceof Error && e.message.includes("decrypt")) {
+        if (e instanceof Error && e.message.includes("decrypt")) {
           setError("Failed to decrypt report. The link may be incomplete or corrupted.");
+          setRetryableError(false);
         } else if (e instanceof Error && e.message.includes("Invalid report format")) {
           setError("Report data is corrupted or in an incompatible format.");
+          setRetryableError(false);
         } else {
-          setError(e instanceof Error ? e.message : "Failed to load report");
+          setError(getApiErrorMessage(e, "Failed to load report"));
+          setRetryableError(isRetryableApiError(e));
         }
         setState("error");
       }
     };
 
     loadReport();
-  }, [reportId]);
+  }, [reportId, loadAttempt]);
 
   const handleFindingClick = useCallback((finding: Finding) => {
     setSelectedFindingId(finding.id);
@@ -168,6 +179,13 @@ export default function ReportViewer() {
     a.click();
     URL.revokeObjectURL(url);
   }, [report]);
+
+  const retryLoadReport = useCallback(() => {
+    setError(null);
+    setRetryableError(false);
+    setState("loading");
+    setLoadAttempt((attempt) => attempt + 1);
+  }, []);
 
   if (state === "loading") {
     return (
@@ -207,6 +225,11 @@ export default function ReportViewer() {
               <Button asChild>
                 <Link to="/">Return Home</Link>
               </Button>
+              {retryableError && (
+                <Button variant="outline" onClick={retryLoadReport}>
+                  Retry Load
+                </Button>
+              )}
             </CardContent>
           </Card>
         </div>
