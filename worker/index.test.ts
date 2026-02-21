@@ -4,7 +4,13 @@ import type { Env } from "./env";
 
 // Response types for type assertions
 type HealthResponse = { status: string; timestamp: string };
-type ErrorResponse = { error: string };
+type ErrorResponse = {
+  error: string;
+  code?: string;
+  retryable?: boolean;
+  tampered?: boolean;
+  requestId?: string;
+};
 type AssignmentCreateResponse = {
   assignmentId: string;
   payload: { requiredLineCount: number; expectedStyle: string; assignmentId: string };
@@ -115,6 +121,9 @@ describe("Worker", () => {
       expect(response.headers.get("Access-Control-Allow-Methods")).toContain(
         "POST"
       );
+      expect(response.headers.get("Access-Control-Allow-Headers")).toContain(
+        "X-Request-Id"
+      );
     });
 
     it("includes CORS headers in all responses", async () => {
@@ -136,6 +145,69 @@ describe("Worker", () => {
       expect(response.status).toBe(200);
       expect(data.status).toBe("ok");
       expect(data.timestamp).toBeDefined();
+    });
+  });
+
+  describe("Request correlation", () => {
+    it("echoes incoming X-Request-Id in headers and error payload", async () => {
+      const request = createRequest("/api/ocr", {
+        method: "POST",
+        headers: {
+          "X-Request-Id": "test-request-id-123",
+        },
+        body: JSON.stringify({}),
+      });
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(400);
+      expect(response.headers.get("X-Request-Id")).toBe("test-request-id-123");
+      expect(data.requestId).toBe("test-request-id-123");
+    });
+
+    it("generates X-Request-Id when missing", async () => {
+      const request = createRequest("/api/ocr", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(400);
+      expect(response.headers.get("X-Request-Id")).toMatch(/^req-/);
+      expect(data.requestId).toMatch(/^req-/);
+    });
+
+    it("writes structured failure logs with requestId", async () => {
+      const logSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockRejectedValue(new Error("timeout while calling OCR provider"))
+      );
+
+      const request = createRequest("/api/ocr", {
+        method: "POST",
+        headers: {
+          "X-Request-Id": "req-log-check",
+          "CF-Connecting-IP": "192.168.30.1",
+        },
+        body: JSON.stringify({ imageB64: "test-image" }),
+      });
+
+      await worker.fetch(request, env);
+
+      expect(logSpy).toHaveBeenCalledWith(
+        "api_failure",
+        expect.objectContaining({
+          route: "/api/ocr",
+          failureType: "ocr_upstream_failure",
+          requestId: "req-log-check",
+        })
+      );
+
+      logSpy.mockRestore();
     });
   });
 
@@ -213,6 +285,7 @@ describe("Worker", () => {
 
       expect(response.status).toBe(404);
       expect(data.error).toBe("Assignment not found");
+      expect(data.code).toBe("ASSIGNMENT_NOT_FOUND");
     });
 
     it("returns 400 for invalid assignment ID format", async () => {
@@ -222,6 +295,7 @@ describe("Worker", () => {
 
       expect(response.status).toBe(400);
       expect(data.error).toBe("Invalid assignment ID format");
+      expect(data.code).toBe("ASSIGNMENT_INVALID_ID");
     });
 
     it("returns 503 when signing secret is not configured", async () => {
@@ -240,6 +314,7 @@ describe("Worker", () => {
 
       expect(response.status).toBe(503);
       expect(data.error).toBe("Signing service not configured");
+      expect(data.code).toBe("SIGNING_SERVICE_UNAVAILABLE");
     });
 
     it("returns 503 when signing secret is missing during GET", async () => {
@@ -265,6 +340,7 @@ describe("Worker", () => {
 
       expect(getResponse.status).toBe(503);
       expect(getData.error).toBe("Signing service not configured");
+      expect(getData.code).toBe("SIGNING_SERVICE_UNAVAILABLE");
     });
 
     it("handles corrupted JSON in storage gracefully", async () => {
@@ -352,6 +428,7 @@ describe("Worker", () => {
       expect(response.status).toBe(403);
       expect(responseData.tampered).toBe(true);
       expect(responseData.error).toContain("invalid");
+      expect(responseData.code).toBe("ASSIGNMENT_TAMPERED");
     });
 
     it("returns 403 for invalid base64 signature", async () => {
@@ -382,6 +459,7 @@ describe("Worker", () => {
 
       expect(response.status).toBe(403);
       expect(data.tampered).toBe(true);
+      expect(data.code).toBe("ASSIGNMENT_TAMPERED");
     });
 
     it("handles storage errors gracefully", async () => {
@@ -398,6 +476,8 @@ describe("Worker", () => {
 
       expect(response.status).toBe(500);
       expect(data.error).toContain("storage");
+      expect(data.code).toBe("ASSIGNMENT_STORAGE_FAILURE");
+      expect(data.retryable).toBe(true);
     });
 
     it("verifies signature correctly when payload has all fields", async () => {
@@ -492,6 +572,7 @@ describe("Worker", () => {
 
       expect(response.status).toBe(400);
       expect(data.error).toBe("Invalid request body");
+      expect(data.code).toBe("REPORT_INVALID_REQUEST");
     });
 
     it("retrieves an encrypted report", async () => {
@@ -533,6 +614,7 @@ describe("Worker", () => {
 
       expect(response.status).toBe(404);
       expect(data.error).toBe("Report not found");
+      expect(data.code).toBe("REPORT_NOT_FOUND");
     });
 
     it("returns 400 for invalid report ID format", async () => {
@@ -542,6 +624,34 @@ describe("Worker", () => {
 
       expect(response.status).toBe(400);
       expect(data.error).toBe("Invalid report ID");
+      expect(data.code).toBe("REPORT_INVALID_ID");
+    });
+
+    it("returns 503 when report storage fails during upload", async () => {
+      const failingStorage = {
+        ...createMockR2(),
+        put: vi.fn().mockRejectedValue(new Error("R2 unavailable")),
+      } as unknown as R2Bucket;
+      const envWithFailingStorage = createMockEnv({ STORAGE: failingStorage });
+
+      const request = createRequest("/api/report", {
+        method: "POST",
+        body: JSON.stringify({
+          ciphertextB64: "data",
+          nonceB64: "nonce",
+          meta: {
+            createdAt: new Date().toISOString(),
+            size: 256,
+          },
+        }),
+      });
+
+      const response = await worker.fetch(request, envWithFailingStorage);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(503);
+      expect(data.code).toBe("REPORT_STORAGE_FAILURE");
+      expect(data.retryable).toBe(true);
     });
   });
 
@@ -607,6 +717,7 @@ describe("Worker", () => {
     it("processes OCR request successfully", async () => {
       const request = createRequest("/api/ocr", {
         method: "POST",
+        headers: { "CF-Connecting-IP": "192.168.20.1" },
         body: JSON.stringify({
           imageB64: "base64-image-data",
         }),
@@ -623,6 +734,7 @@ describe("Worker", () => {
     it("returns 400 for missing image data", async () => {
       const request = createRequest("/api/ocr", {
         method: "POST",
+        headers: { "CF-Connecting-IP": "192.168.20.2" },
         body: JSON.stringify({}),
       });
 
@@ -631,12 +743,14 @@ describe("Worker", () => {
 
       expect(response.status).toBe(400);
       expect(data.error).toBe("Missing imageB64 in request body");
+      expect(data.code).toBe("OCR_INVALID_REQUEST");
     });
 
     it("returns 503 when API key is not configured", async () => {
       const envWithoutKey = createMockEnv({ GOOGLE_CLOUD_API_KEY: "" });
       const request = createRequest("/api/ocr", {
         method: "POST",
+        headers: { "CF-Connecting-IP": "192.168.20.3" },
         body: JSON.stringify({ imageB64: "test" }),
       });
 
@@ -645,6 +759,51 @@ describe("Worker", () => {
 
       expect(response.status).toBe(503);
       expect(data.error).toBe("OCR service not configured");
+      expect(data.code).toBe("OCR_SERVICE_UNAVAILABLE");
+    });
+
+    it("returns structured retryable code on OCR upstream failure", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 500,
+          text: async () => "upstream failure",
+        })
+      );
+
+      const request = createRequest("/api/ocr", {
+        method: "POST",
+        headers: { "CF-Connecting-IP": "192.168.20.4" },
+        body: JSON.stringify({ imageB64: "test-image" }),
+      });
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(502);
+      expect(data.code).toBe("OCR_UPSTREAM_FAILURE");
+      expect(data.retryable).toBe(true);
+    });
+
+    it("returns timeout code on OCR upstream timeout", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockRejectedValue(new Error("timeout while calling OCR provider"))
+      );
+
+      const request = createRequest("/api/ocr", {
+        method: "POST",
+        headers: { "CF-Connecting-IP": "192.168.20.5" },
+        body: JSON.stringify({ imageB64: "test-image" }),
+      });
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(504);
+      expect(data.code).toBe("OCR_UPSTREAM_TIMEOUT");
+      expect(data.retryable).toBe(true);
     });
   });
 
@@ -718,6 +877,7 @@ describe("Worker", () => {
 
       expect(response.status).toBe(503);
       expect(data.error).toBe("Claude verification service not configured");
+      expect(data.code).toBe("CLAUDE_SERVICE_UNAVAILABLE");
     });
 
     it("returns 400 when missing required fields", async () => {
@@ -731,6 +891,7 @@ describe("Worker", () => {
 
       expect(response.status).toBe(400);
       expect(data.error).toContain("Missing required fields");
+      expect(data.code).toBe("CLAUDE_INVALID_REQUEST");
     });
 
     it("returns 411 when Content-Length header is missing", async () => {
@@ -745,6 +906,7 @@ describe("Worker", () => {
 
       expect(response.status).toBe(411);
       expect(data.error).toBe("Content-Length header is required");
+      expect(data.code).toBe("CLAUDE_CONTENT_LENGTH_REQUIRED");
     });
 
     it("returns 400 when imageB64 is empty", async () => {
@@ -759,6 +921,7 @@ describe("Worker", () => {
 
       expect(response.status).toBe(400);
       expect(data.error).toContain("Missing required fields");
+      expect(data.code).toBe("CLAUDE_INVALID_REQUEST");
     });
 
     it("handles Claude API errors gracefully", async () => {
@@ -780,8 +943,30 @@ describe("Worker", () => {
       const response = await worker.fetch(request, env);
       const data = (await response.json()) as ErrorResponse;
 
-      expect(response.status).toBe(500);
-      expect(data.error).toContain("Anthropic API error");
+      expect(response.status).toBe(502);
+      expect(data.error).toContain("Claude verification failed");
+      expect(data.code).toBe("CLAUDE_UPSTREAM_FAILURE");
+      expect(data.retryable).toBe(true);
+    });
+
+    it("returns timeout code when Claude upstream times out", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockRejectedValue(new Error("timeout during Claude call"))
+      );
+
+      const request = createClaudeRequest({
+        imageB64: "test-image",
+        expectedText: "test",
+        lineIndex: 0,
+      }, "192.168.10.8");
+
+      const response = await worker.fetch(request, env);
+      const data = (await response.json()) as ErrorResponse;
+
+      expect(response.status).toBe(504);
+      expect(data.code).toBe("CLAUDE_UPSTREAM_TIMEOUT");
+      expect(data.retryable).toBe(true);
     });
 
     it("handles mismatched content correctly", async () => {
@@ -837,6 +1022,7 @@ describe("Worker", () => {
 
       expect(response.status).toBe(404);
       expect(data.error).toBe("Not found");
+      expect(data.code).toBe("ROUTE_NOT_FOUND");
     });
   });
 

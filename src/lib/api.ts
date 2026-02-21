@@ -2,6 +2,63 @@ import type { UploadReportRequest, UploadReportResponse, GetReportResponse, Assi
 
 const API_BASE = "";
 
+interface ErrorResponsePayload {
+  error?: string;
+  code?: string;
+  retryable?: boolean;
+  requestId?: string;
+}
+
+interface ApiErrorOptions {
+  code?: string;
+  status?: number;
+  retryable?: boolean;
+  requestId?: string;
+}
+
+const ERROR_MESSAGE_BY_CODE: Record<string, string> = {
+  OCR_UPSTREAM_TIMEOUT: "OCR timed out. Please try again.",
+  OCR_UPSTREAM_FAILURE: "OCR service is temporarily unavailable. Please try again.",
+  CLAUDE_UPSTREAM_TIMEOUT: "Claude verification timed out. Please try again.",
+  CLAUDE_UPSTREAM_FAILURE: "Claude verification is temporarily unavailable. Please try again.",
+  REPORT_STORAGE_FAILURE: "Report storage is temporarily unavailable. Please try again.",
+  REQUEST_TIMEOUT: "Request timed out. Please check your connection and try again.",
+  RATE_LIMITED: "Too many requests. Please wait a minute and try again.",
+};
+
+export class ApiError extends Error {
+  readonly code?: string;
+  readonly status?: number;
+  readonly retryable: boolean;
+  readonly requestId?: string;
+
+  constructor(message: string, options: ApiErrorOptions = {}) {
+    super(message);
+    this.name = "ApiError";
+    this.code = options.code;
+    this.status = options.status;
+    this.retryable = options.retryable ?? false;
+    this.requestId = options.requestId;
+  }
+}
+
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiError) {
+    if (error.code && ERROR_MESSAGE_BY_CODE[error.code]) {
+      return ERROR_MESSAGE_BY_CODE[error.code];
+    }
+    return error.message || fallback;
+  }
+  if (error instanceof Error) {
+    return error.message || fallback;
+  }
+  return fallback;
+}
+
+export function isRetryableApiError(error: unknown): boolean {
+  return error instanceof ApiError ? error.retryable : false;
+}
+
 // Assignment API types
 export interface CreateAssignmentRequest {
   requiredLineCount: number;
@@ -75,10 +132,13 @@ async function request<T>(
     });
 
     if (!response.ok) {
-      const error = (await response.json().catch(() => ({ error: "Request failed" }))) as {
-        error?: string;
-      };
-      throw new Error(error.error || "Request failed");
+      const errorPayload = (await response.json().catch(() => ({ error: "Request failed" }))) as ErrorResponsePayload;
+      throw new ApiError(errorPayload.error || "Request failed", {
+        code: errorPayload.code,
+        status: response.status,
+        retryable: errorPayload.retryable ?? response.status >= 500,
+        requestId: errorPayload.requestId,
+      });
     }
 
     return response.json();
@@ -86,9 +146,18 @@ async function request<T>(
     if (err instanceof Error && err.name === "AbortError") {
       // Check if it was our timeout or an external abort
       if (controller.signal.aborted && !options.signal?.aborted) {
-        throw new Error("Request timed out. Please check your connection and try again.");
+        throw new ApiError("Request timed out. Please check your connection and try again.", {
+          code: "REQUEST_TIMEOUT",
+          retryable: true,
+        });
       }
-      throw new Error("Request was cancelled");
+      throw new ApiError("Request was cancelled", {
+        code: "REQUEST_CANCELLED",
+        retryable: false,
+      });
+    }
+    if (err instanceof ApiError) {
+      throw err;
     }
     throw err;
   } finally {
