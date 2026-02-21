@@ -112,6 +112,9 @@ A React/Vite frontend plus Cloudflare Worker backend for creating signed handwri
   - OCR endpoint now validates missing/invalid `Content-Length` (`OCR_CONTENT_LENGTH_REQUIRED`, `OCR_INVALID_CONTENT_LENGTH`)
   - API client falls back to `X-Request-Id` response header when error body omits `requestId`
   - worker/api tests updated for new failure-path coverage and request-id behavior
+- Additional review cleanup:
+  - synced launch readiness checklist test-count status to `142/142`
+  - removed assignment retrieval debug `console.warn` logs from `worker/index.ts` to reduce production log noise
 - Privacy/trust copy now consistently states:
   - standard flow keeps decryption key in URL fragment
   - assignment email-notification flow includes key only to deliver usable emailed links

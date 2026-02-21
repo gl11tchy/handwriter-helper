@@ -816,12 +816,8 @@ export default {
       if (url.pathname.startsWith("/api/assignment/") && request.method === "GET") {
         const assignmentId = url.pathname.replace("/api/assignment/", "");
 
-        // Log for debugging (visible in Cloudflare logs only)
-        console.warn("GET assignment request:", { assignmentId, pathname: url.pathname });
-
         // Validate assignment ID format and length (max 100 chars to prevent abuse)
         if (!/^[a-z0-9-]+$/i.test(assignmentId) || assignmentId.length > 100) {
-          console.warn("Invalid assignment ID format:", assignmentId);
           return errorJson(400, corsHeaders, {
             error: "Invalid assignment ID format",
             code: "ASSIGNMENT_INVALID_ID",
@@ -832,7 +828,6 @@ export default {
         let object;
         try {
           object = await env.STORAGE.get(`assignments/${assignmentId}.json`);
-          console.warn("Storage.get result:", { found: !!object, assignmentId });
         } catch (storageError) {
           logFailure(url.pathname, "assignment_storage_fetch_error", requestId, storageError);
           return errorJson(500, corsHeaders, {
@@ -843,7 +838,6 @@ export default {
         }
 
         if (!object) {
-          console.warn("Assignment not found in storage:", assignmentId);
           return errorJson(404, corsHeaders, {
             error: "Assignment not found",
             code: "ASSIGNMENT_NOT_FOUND",
@@ -854,7 +848,6 @@ export default {
         let stored: StoredAssignment;
         try {
           stored = await object.json() as StoredAssignment;
-          console.warn("Parsed stored assignment:", { hasPayload: !!stored?.payload, hasSignature: !!stored?.signature });
         } catch (parseError) {
           logFailure(url.pathname, "assignment_data_parse_error", requestId, parseError);
           return errorJson(500, corsHeaders, {
@@ -888,7 +881,6 @@ export default {
         try {
           const payloadJson = JSON.stringify(stored.payload);
           valid = await verifySignature(payloadJson, stored.signature, env.SIGNING_SECRET);
-          console.warn("Signature verification result:", { valid });
         } catch (verifyError) {
           logFailure(url.pathname, "assignment_signature_verification_error", requestId, verifyError);
           return errorJson(403, corsHeaders, {
@@ -900,7 +892,6 @@ export default {
         }
 
         if (!valid) {
-          console.warn("Signature verification failed - tampered data");
           return errorJson(403, corsHeaders, {
             error: "This assignment link is invalid or has been modified. Please request a new link.",
             code: "ASSIGNMENT_TAMPERED",
@@ -909,7 +900,6 @@ export default {
           }, requestId);
         }
 
-        console.warn("Assignment retrieved successfully:", assignmentId);
         return Response.json(
           { payload: stored.payload, verified: true },
           { headers: responseHeaders }
